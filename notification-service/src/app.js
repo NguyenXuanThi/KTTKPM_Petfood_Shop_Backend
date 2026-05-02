@@ -3,8 +3,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
-const cookieParser = require("cookie-parser");
-const authRoutes = require("./routes/authRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 const { corsOrigin } = require("./config/env");
 
 const app = express();
@@ -14,22 +13,21 @@ app.use(
   cors({
     origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
-  })
+  }),
 );
 app.use(compression());
-app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.status(200).json({
-    service: "auth-service",
+    service: "notification-service",
     status: "ok",
   });
 });
 
-app.use("/auth", authRoutes);
-app.use("/api/auth", authRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -45,30 +43,11 @@ app.use((error, req, res, next) => {
     });
   }
 
-  if (error && error.code === 11000) {
-    return res.status(409).json({
-      message: "Email already exists",
-    });
-  }
-
   const statusCode = error.statusCode || 500;
-  const payload = {
+
+  return res.status(statusCode).json({
     message: error.message || "Internal server error",
-  };
-
-  if (error.reason) {
-    payload.reason = error.reason;
-  }
-
-  if (error.canRequestReactivation !== undefined) {
-    payload.canRequestReactivation = error.canRequestReactivation;
-  }
-
-  if (error.userId) {
-    payload.userId = error.userId;
-  }
-
-  return res.status(statusCode).json(payload);
+  });
 });
 
 module.exports = app;

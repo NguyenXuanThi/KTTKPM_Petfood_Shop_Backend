@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const sessionRepository = require("../repositories/sessionRepository");
 const {
@@ -8,6 +7,7 @@ const {
   refreshTokenExpiryMs,
 } = require("../utils/token");
 const userClient = require("./userClient");
+const notificationClient = require("./notificationClient");
 
 const createSession = async (userId) => {
   const refreshToken = signRefreshToken(userId);
@@ -24,9 +24,24 @@ const normalizeUser = (user) => ({
   email: user.email,
   role: user.role,
   isActive: user.isActive,
+  inactiveReason: user.inactiveReason || null,
+  inactiveAt: user.inactiveAt || null,
+  lastLoginAt: user.lastLoginAt || null,
+  reactivationRequestedAt: user.reactivationRequestedAt || null,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
+
+const ensureUserIsActiveForAuth = (user) => {
+  if (user.isActive === false) {
+    const error = new Error("Your account is inactive");
+    error.statusCode = 403;
+    error.reason = user.inactiveReason || "Account is inactive";
+    error.canRequestReactivation = true;
+    error.userId = String(user.id || user._id);
+    throw error;
+  }
+};
 
 const register = async ({ fullName, email, password }) => {
   const user = await userClient.createUser({ fullName, email, password });
@@ -60,14 +75,19 @@ const login = async ({ email, password }) => {
     throw error;
   }
 
-  const accessToken = signAccessToken(user);
+  ensureUserIsActiveForAuth(user);
+
+  const updatedUser = await userClient.markLastLogin(user.id);
+
+  const accessToken = signAccessToken(updatedUser);
   const refreshToken = await createSession(user.id);
 
-  return { accessToken, refreshToken, user: normalizeUser(user) };
+  return { accessToken, refreshToken, user: normalizeUser(updatedUser) };
 };
 
 const getProfile = async (userId) => {
   const user = await userClient.getUserById(userId);
+  ensureUserIsActiveForAuth(user);
   return normalizeUser(user);
 };
 
@@ -98,6 +118,7 @@ const refresh = async (oldRefreshToken) => {
   }
 
   const user = await userClient.getUserById(payload.sub);
+  ensureUserIsActiveForAuth(user);
 
   const accessToken = signAccessToken(user);
   const newRefreshToken = await createSession(user.id);
@@ -111,10 +132,45 @@ const logout = async (refreshToken) => {
   }
 };
 
+const requestReactivation = async (userId) => {
+  const user = await userClient.getUserById(userId);
+
+  if (user.isActive !== false) {
+    const error = new Error("User account is already active");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  const requestedAt = user.reactivationRequestedAt
+    ? new Date(user.reactivationRequestedAt)
+    : null;
+
+  if (requestedAt && requestedAt > fifteenMinutesAgo) {
+    const error = new Error("Reactivation request was sent recently");
+    error.statusCode = 429;
+    throw error;
+  }
+
+  await notificationClient.sendReactivationRequest({
+    userId: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    inactiveReason: user.inactiveReason || "Account is inactive",
+  });
+
+  await userClient.markReactivationRequested(user.id);
+
+  return {
+    message: "Reactivation request sent to admin",
+  };
+};
+
 module.exports = {
   register,
   login,
   getProfile,
   refresh,
   logout,
+  requestReactivation,
 };

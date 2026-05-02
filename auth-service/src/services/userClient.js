@@ -11,7 +11,9 @@ const callUserService = async (config) => {
     return response.data;
   } catch (error) {
     if (error.response) {
-      const mappedError = new Error(error.response.data?.message || "User service request failed");
+      const mappedError = new Error(
+        error.response.data?.message || "User service request failed",
+      );
       mappedError.statusCode = error.response.status;
       throw mappedError;
     }
@@ -44,7 +46,25 @@ const getUserByEmail = async (email) => {
 const getUserById = async (id) => {
   const data = await callUserService({
     method: "get",
-    url: `${userServiceUrl}/users/${id}`,
+    url: `${userServiceUrl}/users/internal/${id}`,
+  });
+
+  return data.user;
+};
+
+const markLastLogin = async (id) => {
+  const data = await callUserService({
+    method: "patch",
+    url: `${userServiceUrl}/users/${id}/last-login`,
+  });
+
+  return data.user;
+};
+
+const markReactivationRequested = async (id) => {
+  const data = await callUserService({
+    method: "patch",
+    url: `${userServiceUrl}/users/${id}/reactivation-request`,
   });
 
   return data.user;
@@ -54,4 +74,6 @@ module.exports = {
   createUser,
   getUserByEmail,
   getUserById,
+  markLastLogin,
+  markReactivationRequested,
 };

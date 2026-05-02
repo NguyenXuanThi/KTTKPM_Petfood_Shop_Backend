@@ -6,8 +6,9 @@ const router = express.Router();
 
 router.post("/register", authController.register);
 router.post("/login", authController.login);
-router.post("/refresh", authController.refresh); // đọc refreshToken từ cookie, trả accessToken mới
-router.post("/logout", authController.logout); // xóa session + clear cookie
+router.post("/request-reactivation", authController.requestReactivation);
+router.post("/refresh", authController.refresh);
+router.post("/logout", authController.logout);
 router.get("/me", requireAuth, authController.me);
 
 module.exports = router;

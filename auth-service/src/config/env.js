@@ -9,6 +9,7 @@ const requiredEnvVars = [
   "JWT_SECRET",
   "JWT_REFRESH_SECRET",
   "USER_SERVICE_URL",
+  "NOTIFICATION_SERVICE_URL",
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -28,4 +29,8 @@ module.exports = {
   corsOrigin: process.env.AUTH_CORS_ORIGIN || "*",
   userServiceUrl: process.env.USER_SERVICE_URL,
   userServiceTimeoutMs: Number(process.env.AUTH_USER_SERVICE_TIMEOUT_MS || 5000),
+  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
+  notificationServiceTimeoutMs: Number(
+    process.env.AUTH_NOTIFICATION_SERVICE_TIMEOUT_MS || 5000,
+  ),
 };

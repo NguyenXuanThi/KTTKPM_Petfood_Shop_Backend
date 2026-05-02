@@ -11,7 +11,15 @@ const loginSchema = Joi.object({
   password: Joi.string().min(6).max(128).required(),
 });
 
+const requestReactivationSchema = Joi.object({
+  userId: Joi.string()
+    .trim()
+    .pattern(/^[a-f\d]{24}$/i)
+    .required(),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
+  requestReactivationSchema,
 };

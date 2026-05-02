@@ -1,4 +1,8 @@
-const { registerSchema, loginSchema } = require("../validators/authValidator");
+const {
+  registerSchema,
+  loginSchema,
+  requestReactivationSchema,
+} = require("../validators/authValidator");
 const authService = require("../services/authService");
 const { nodeEnv } = require("../config/env");
 const { refreshTokenExpiryMs } = require("../utils/token");
@@ -101,10 +105,26 @@ const logout = async (req, res, next) => {
   }
 };
 
+const requestReactivation = async (req, res, next) => {
+  try {
+    const { userId } = await requestReactivationSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    const result = await authService.requestReactivation(userId);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   me,
   refresh,
   logout,
+  requestReactivation,
 };
