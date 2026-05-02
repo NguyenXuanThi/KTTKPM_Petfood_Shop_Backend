@@ -33,6 +33,24 @@ const userSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    inactiveReason: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    inactiveAt: {
+      type: Date,
+      default: null,
+    },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    reactivationRequestedAt: {
+      type: Date,
+      default: null,
+    },
     avatarUrl: {
       type: String,
       default: "",

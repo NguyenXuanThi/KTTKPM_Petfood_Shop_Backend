@@ -4,6 +4,8 @@ const {
   updateProfileSchema,
   changePasswordSchema,
   updateRoleSchema,
+  updateStatusSchema,
+  deactivateUserSchema,
   listUsersQuerySchema,
   idParamSchema,
   emailParamSchema,
@@ -36,13 +38,15 @@ const getUserById = async (req, res, next) => {
       convert: true,
     });
 
-    const user = await userService.getProfile(id);
+    const user = await userService.getUserById(id);
 
     return res.status(200).json({ user });
   } catch (error) {
     return next(error);
   }
 };
+
+const getInternalUserById = getUserById;
 
 const getUserByEmail = async (req, res, next) => {
   try {
@@ -149,6 +153,87 @@ const updateUserRole = async (req, res, next) => {
   }
 };
 
+const updateUserStatus = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const { isActive } = await updateStatusSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    if (req.auth?.sub === id && isActive === false) {
+      const error = new Error("You cannot deactivate your own account");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await userService.updateStatus(id, isActive);
+
+    return res.status(200).json({
+      message: `User ${isActive ? "activated" : "deactivated"} successfully`,
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deactivateUser = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const { reason } = await deactivateUserSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    if (req.auth?.sub === id) {
+      const error = new Error("You cannot deactivate your own account");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await userService.deactivateUser(id, reason);
+
+    return res.status(200).json({
+      message: "Deactivate user successful",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const activateUser = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const user = await userService.activateUser(id);
+
+    return res.status(200).json({
+      message: "Activate user successful",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const restoreUser = async (req, res, next) => {
   try {
     const { id } = await idParamSchema.validateAsync(req.params, {
@@ -168,14 +253,58 @@ const restoreUser = async (req, res, next) => {
   }
 };
 
+const markLastLogin = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const user = await userService.markLastLogin(id);
+
+    return res.status(200).json({
+      message: "Last login updated",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const markReactivationRequested = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const user = await userService.markReactivationRequested(id);
+
+    return res.status(200).json({
+      message: "Reactivation request timestamp updated",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createUser,
   getUserById,
+  getInternalUserById,
   getUserByEmail,
   getMe,
   updateMe,
   changeMyPassword,
   listUsers,
   updateUserRole,
+  updateUserStatus,
+  deactivateUser,
+  activateUser,
   restoreUser,
+  markLastLogin,
+  markReactivationRequested,
 };

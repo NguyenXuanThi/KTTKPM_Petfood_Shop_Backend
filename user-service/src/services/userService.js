@@ -18,6 +18,10 @@ const formatUser = (user, includePassword = false) => {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+    inactiveReason: user.inactiveReason || null,
+    inactiveAt: user.inactiveAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+    reactivationRequestedAt: user.reactivationRequestedAt || null,
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -63,6 +67,10 @@ const createUser = async ({ fullName, email, password, role }) => {
     password: hashedPassword,
     role: role || "user",
     isActive: true,
+    inactiveReason: null,
+    inactiveAt: null,
+    lastLoginAt: null,
+    reactivationRequestedAt: null,
     avatarUrl: "",
   });
 
@@ -74,12 +82,26 @@ const getProfile = async (userId) => {
   return formatUser(user);
 };
 
+const getUserById = async (userId) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return formatUser(user);
+};
+
 const getByEmailForAuth = async (email) => {
   const normalizedEmail = email.toLowerCase();
 
   const user = await userRepository.findByEmail(normalizedEmail);
 
-  if (!user || !user.isActive) {
+  if (!user) {
     const error = new Error("User not found");
     error.statusCode = 404;
     throw error;
@@ -121,8 +143,24 @@ const changePassword = async (userId, { oldPassword, newPassword }) => {
   return formatUser(user);
 };
 
-const listUsers = async ({ page, limit, email }) => {
-  const data = await userRepository.listUsers({ page, limit, email });
+const listUsers = async ({
+  page,
+  limit,
+  email,
+  status,
+  isActive,
+  active,
+  inactive,
+}) => {
+  const data = await userRepository.listUsers({
+    page,
+    limit,
+    email,
+    status,
+    isActive,
+    active,
+    inactive,
+  });
 
   return {
     items: data.items.map((item) => formatUser(item)),
@@ -139,7 +177,46 @@ const updateRole = async (userId, role) => {
   return formatUser(user);
 };
 
-const restoreUser = async (userId) => {
+const updateStatus = async (userId, isActive) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.isActive = isActive;
+  user.inactiveReason = isActive ? null : "Manually deactivated by admin";
+  user.inactiveAt = isActive ? null : new Date();
+  user.reactivationRequestedAt = isActive ? null : user.reactivationRequestedAt;
+  await user.save();
+
+  return formatUser(user);
+};
+
+const deactivateUser = async (userId, reason) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.isActive = false;
+  user.inactiveReason = reason;
+  user.inactiveAt = new Date();
+  await user.save();
+
+  return formatUser(user);
+};
+
+const activateUser = async (userId) => {
   ensureObjectId(userId);
 
   const user = await userRepository.findById(userId);
@@ -151,18 +228,104 @@ const restoreUser = async (userId) => {
   }
 
   user.isActive = true;
+  user.inactiveReason = null;
+  user.inactiveAt = null;
+  user.reactivationRequestedAt = null;
   await user.save();
 
   return formatUser(user);
 };
 
+const restoreUser = activateUser;
+
+const markLastLogin = async (userId) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.lastLoginAt = new Date();
+  await user.save();
+
+  return formatUser(user);
+};
+
+const markReactivationRequested = async (userId) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (user.isActive) {
+    const error = new Error("User account is already active");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  if (
+    user.reactivationRequestedAt &&
+    user.reactivationRequestedAt > fifteenMinutesAgo
+  ) {
+    const error = new Error("Reactivation request was sent recently");
+    error.statusCode = 429;
+    throw error;
+  }
+
+  user.reactivationRequestedAt = new Date();
+  await user.save();
+
+  return formatUser(user);
+};
+
+const autoDeactivateInactiveUsers = async ({
+  days = 30,
+  reason = "No login activity for 30 days",
+} = {}) => {
+  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const users = await userRepository.findInactiveCandidates(cutoffDate);
+  const inactiveAt = new Date();
+
+  await Promise.all(
+    users.map(async (user) => {
+      user.isActive = false;
+      user.inactiveReason = reason;
+      user.inactiveAt = inactiveAt;
+      await user.save();
+    }),
+  );
+
+  return {
+    deactivatedCount: users.length,
+    cutoffDate,
+  };
+};
+
 module.exports = {
   createUser,
   getProfile,
+  getUserById,
   getByEmailForAuth,
   updateProfile,
   changePassword,
   listUsers,
   updateRole,
+  updateStatus,
+  deactivateUser,
+  activateUser,
   restoreUser,
+  markLastLogin,
+  markReactivationRequested,
+  autoDeactivateInactiveUsers,
 };

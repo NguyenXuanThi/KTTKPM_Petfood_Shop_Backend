@@ -6,7 +6,15 @@ const findById = async (id) => User.findById(id);
 
 const findByEmail = async (email) => User.findOne({ email });
 
-const listUsers = async ({ page, limit, email }) => {
+const listUsers = async ({
+  page,
+  limit,
+  email,
+  status,
+  isActive,
+  active,
+  inactive,
+}) => {
   const filter = {};
 
   if (email) {
@@ -14,6 +22,19 @@ const listUsers = async ({ page, limit, email }) => {
       $regex: email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
       $options: "i",
     };
+  }
+
+  if (status === "active" || isActive === true || active === true) {
+    filter.isActive = true;
+  }
+
+  if (
+    status === "inactive" ||
+    isActive === false ||
+    active === false ||
+    inactive === true
+  ) {
+    filter.isActive = false;
   }
 
   const skip = (page - 1) * limit;
@@ -34,9 +55,16 @@ const listUsers = async ({ page, limit, email }) => {
   };
 };
 
+const findInactiveCandidates = async (cutoffDate) =>
+  User.find({
+    isActive: true,
+    lastLoginAt: { $ne: null, $lte: cutoffDate },
+  });
+
 module.exports = {
   create,
   findById,
   findByEmail,
   listUsers,
+  findInactiveCandidates,
 };
