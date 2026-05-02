@@ -11,6 +11,8 @@ const {
   productServiceUrl,
   cartServiceUrl,
   categoryServiceUrl,
+  uploadServiceUrl,
+  userServiceUrl,
   rateLimitWindowMs,
   rateLimitMax,
 } = require("./config/env");
@@ -22,7 +24,7 @@ app.use(
   cors({
     origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
-  })
+  }),
 );
 app.use(compression());
 app.use(morgan("dev"));
@@ -72,18 +74,36 @@ app.get("/api/health", (req, res) => {
       product: "/api/products/*",
       cart: "/api/cart/*",
       category: "/api/categories/*",
+      users: "/api/users/*",
     },
   });
 });
 
 app.use("/api", apiLimiter);
-app.use("/api/auth", createServiceProxy("auth-service", authServiceUrl, "/api/auth"));
+app.use(
+  "/api/auth",
+  createServiceProxy("auth-service", authServiceUrl, "/api/auth"),
+);
 app.use(
   "/api/products",
-  createServiceProxy("product-service", productServiceUrl, "/api/products")
+  createServiceProxy("product-service", productServiceUrl, "/api/products"),
 );
-app.use("/api/cart", createServiceProxy("cart-service", cartServiceUrl, "/api/cart"));
-app.use("/api/categories", createServiceProxy("category-service", categoryServiceUrl, "/api/categories"));
+app.use(
+  "/api/cart",
+  createServiceProxy("cart-service", cartServiceUrl, "/api/cart"),
+);
+app.use(
+  "/api/categories",
+  createServiceProxy("category-service", categoryServiceUrl, "/api/categories"),
+);
+app.use(
+  "/api/upload",
+  createServiceProxy("upload-service", uploadServiceUrl, "/api/upload"),
+);
+app.use(
+  "/api/users",
+  createServiceProxy("user-service", userServiceUrl, "/api/users"),
+);
 
 app.use((req, res) => {
   res.status(404).json({
