@@ -19,4 +19,8 @@ module.exports = {
   corsOrigin: process.env.USER_CORS_ORIGIN || "*",
   bcryptSaltRounds: Number(process.env.USER_BCRYPT_SALT_ROUNDS || 10),
   jwtSecret: process.env.JWT_SECRET,
+  productServiceUrl: process.env.PRODUCT_SERVICE_URL || "http://localhost:3003",
+  productServiceTimeoutMs: Number(
+    process.env.USER_PRODUCT_SERVICE_TIMEOUT_MS || 5000,
+  ),
 };

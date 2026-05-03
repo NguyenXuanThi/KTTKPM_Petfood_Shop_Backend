@@ -1,5 +1,6 @@
 const express = require("express");
 const userController = require("../controllers/userController");
+const wishlistController = require("../controllers/wishlistController");
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requireAdmin } = require("../middlewares/roleMiddleware");
 
@@ -9,6 +10,22 @@ const router = express.Router();
 router.get("/me", requireAuth, userController.getMe);
 router.patch("/me", requireAuth, userController.updateMe);
 router.patch("/me/password", requireAuth, userController.changeMyPassword);
+router.get("/me/wishlist", requireAuth, wishlistController.getMyWishlist);
+router.get(
+  "/me/wishlist/check/:productId",
+  requireAuth,
+  wishlistController.checkMyWishlistItem,
+);
+router.post(
+  "/me/wishlist/items",
+  requireAuth,
+  wishlistController.addToMyWishlist,
+);
+router.delete(
+  "/me/wishlist/items/:productId",
+  requireAuth,
+  wishlistController.removeFromMyWishlist,
+);
 
 // Admin endpoints
 router.get("/", requireAuth, requireAdmin, userController.listUsers);
