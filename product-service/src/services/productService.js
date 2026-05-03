@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
 const Product = require("../models/Product");
+const reviewService = require("./reviewService");
 const { uploadProductImage, deleteProductImage } = require("./uploadClient");
 const { ensureActiveCategory } = require("./categoryClient");
 
@@ -76,7 +77,14 @@ const createProduct = async (payload, imageFile) => {
   }
 };
 
-const listProducts = async ({ keyword, categoryId, page, limit, sortBy, sortOrder }) => {
+const listProducts = async ({
+  keyword,
+  categoryId,
+  page,
+  limit,
+  sortBy,
+  sortOrder,
+}) => {
   const filter = {};
 
   if (keyword) {
@@ -112,7 +120,10 @@ const listProducts = async ({ keyword, categoryId, page, limit, sortBy, sortOrde
 const getProductDetail = async (productId) => {
   ensureObjectId(productId);
 
-  const product = await Product.findById(productId);
+  const [product, reviewSummary] = await Promise.all([
+    Product.findById(productId),
+    reviewService.getVisibleReviewSummary(productId),
+  ]);
 
   if (!product) {
     const error = new Error("Product not found");
@@ -120,7 +131,12 @@ const getProductDetail = async (productId) => {
     throw error;
   }
 
-  return product;
+  return {
+    ...product.toObject(),
+    averageRating: reviewSummary.averageRating,
+    rating: reviewSummary.averageRating,
+    reviewCount: reviewSummary.totalReviews,
+  };
 };
 
 const updateProduct = async (productId, payload, imageFile) => {
@@ -154,7 +170,8 @@ const updateProduct = async (productId, payload, imageFile) => {
     }
 
     if (payload.name !== undefined) product.name = payload.name;
-    if (payload.description !== undefined) product.description = payload.description;
+    if (payload.description !== undefined)
+      product.description = payload.description;
     if (payload.price !== undefined) product.price = payload.price;
     if (payload.stock !== undefined) product.stock = payload.stock;
     if (payload.categoryId !== undefined) {
@@ -201,6 +218,7 @@ const deleteProduct = async (productId) => {
   }
 
   await Product.deleteOne({ _id: productId });
+  await reviewService.deleteReviewsByProductId(productId);
   await deleteProductImage({
     provider: product.imageProvider || "s3",
     key: product.imageKey,
