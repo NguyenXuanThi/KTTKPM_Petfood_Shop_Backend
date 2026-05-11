@@ -3,6 +3,8 @@ const {
   createOrderSchema,
   listOrderSchema,
   updateOrderStatusSchema,
+  updateDeliveryTimeSchema,
+  paymentSucceededEventSchema,
 } = require("../validators/orderValidator");
 
 const createOrder = async (req, res, next) => {
@@ -68,10 +70,81 @@ const updateOrderStatus = async (req, res, next) => {
       convert: true,
     });
 
-    const order = await orderService.updateOrderStatus(req.params.id, payload);
+    const order = await orderService.updateOrderStatus(req.params.id, payload, req.auth);
 
     return res.status(200).json({
       message: "Update order successful",
+      order,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const listWaitingForProcessing = async (req, res, next) => {
+  try {
+    const query = await listOrderSchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const data = await orderService.listWaitingForProcessing(query);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateDeliveryTime = async (req, res, next) => {
+  try {
+    const payload = await updateDeliveryTimeSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const order = await orderService.updateDeliveryTime(
+      req.params.id,
+      req.auth.sub,
+      payload.deliveryEstimatedTime
+    );
+
+    return res.status(200).json({
+      message: "Update delivery time successful",
+      order,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const handlePaymentSucceeded = async (req, res, next) => {
+  try {
+    const payload = await paymentSucceededEventSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const order = await orderService.handlePaymentSucceeded(payload);
+
+    return res.status(200).json({
+      message: "PaymentSucceeded handled",
+      order,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const markDeliveryPopupSeen = async (req, res, next) => {
+  try {
+    const order = await orderService.markDeliveryPopupSeen(req.params.id, req.auth.sub);
+
+    return res.status(200).json({
+      message: "Delivery popup marked as seen",
       order,
     });
   } catch (error) {
@@ -84,5 +157,9 @@ module.exports = {
   getMyOrders,
   getOrder,
   listOrders,
+  listWaitingForProcessing,
+  updateDeliveryTime,
   updateOrderStatus,
+  handlePaymentSucceeded,
+  markDeliveryPopupSeen,
 };

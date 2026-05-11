@@ -76,6 +76,7 @@ app.get("/api/health", (req, res) => {
       cart: "/api/cart/*",
       category: "/api/categories/*",
       orders: "/api/orders/*",
+      adminOrders: "/api/admin/orders/*",
       users: "/api/users/*",
     },
   });
@@ -101,6 +102,10 @@ app.use(
 app.use(
   "/api/orders",
   createServiceProxy("order-service", orderServiceUrl, "/api/orders"),
+);
+app.use(
+  "/api/admin/orders",
+  createServiceProxy("order-service", orderServiceUrl, "/api/orders/admin"),
 );
 app.use(
   "/api/upload",

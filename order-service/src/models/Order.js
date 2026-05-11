@@ -1,5 +1,20 @@
 const mongoose = require("mongoose");
 
+const ORDER_STATUSES = [
+  "PENDING_PAYMENT",
+  "PAID",
+  "WAITING_FOR_PROCESSING",
+  "PROCESSING",
+  "WAITING_FOR_DELIVERY",
+  "DELIVERING",
+  "DELIVERED",
+  "CANCELLED",
+  "FAILED",
+  "REFUNDED",
+];
+
+const PAYMENT_STATUSES = ["PENDING", "PAID", "FAILED", "REFUNDED"];
+
 const orderItemSchema = new mongoose.Schema(
   {
     productId: {
@@ -96,6 +111,12 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
+    orderStatus: {
+      type: String,
+      enum: ORDER_STATUSES,
+      default: "PENDING_PAYMENT",
+      index: true,
+    },
     paymentMethod: {
       type: String,
       enum: ["cod", "bank_transfer", "momo"],
@@ -103,9 +124,31 @@ const orderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
-      default: "pending",
+      enum: PAYMENT_STATUSES,
+      default: "PENDING",
       index: true,
+    },
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
+    deliveryEstimatedTime: {
+      type: Date,
+      default: null,
+    },
+    deliveredAt: {
+      type: Date,
+      default: null,
+    },
+    deliveryPopupSeen: {
+      type: Boolean,
+      default: false,
+    },
+    processedEventIds: {
+      type: [String],
+      default: [],
+      select: false,
     },
   },
   {
@@ -114,5 +157,27 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ userId: 1, createdAt: -1 });
+orderSchema.index({ paymentStatus: 1, orderStatus: 1, createdAt: -1 });
+
+orderSchema.pre("validate", function normalizeLegacyStatuses(next) {
+  if (typeof this.paymentStatus === "string") {
+    this.paymentStatus = this.paymentStatus.toUpperCase();
+  }
+
+  if (!this.orderStatus) {
+    const statusMap = {
+      pending: "PENDING_PAYMENT",
+      processing: "PROCESSING",
+      shipped: "DELIVERING",
+      delivered: "DELIVERED",
+      cancelled: "CANCELLED",
+    };
+    this.orderStatus = statusMap[this.status] || "PENDING_PAYMENT";
+  }
+
+  next();
+});
 
 module.exports = mongoose.model("Order", orderSchema);
+module.exports.ORDER_STATUSES = ORDER_STATUSES;
+module.exports.PAYMENT_STATUSES = PAYMENT_STATUSES;

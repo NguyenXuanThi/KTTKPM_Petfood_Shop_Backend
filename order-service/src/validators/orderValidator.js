@@ -1,6 +1,20 @@
 const Joi = require("joi");
 
 const objectId = Joi.string().hex().length(24);
+const orderStatuses = [
+  "PENDING_PAYMENT",
+  "PAID",
+  "WAITING_FOR_PROCESSING",
+  "PROCESSING",
+  "WAITING_FOR_DELIVERY",
+  "DELIVERING",
+  "DELIVERED",
+  "CANCELLED",
+  "FAILED",
+  "REFUNDED",
+];
+
+const paymentStatuses = ["PENDING", "PAID", "FAILED", "REFUNDED"];
 
 const orderItemSchema = Joi.object({
   productId: objectId.required(),
@@ -28,19 +42,34 @@ const listOrderSchema = Joi.object({
   status: Joi.string()
     .valid("pending", "processing", "shipped", "delivered", "cancelled")
     .optional(),
+  orderStatus: Joi.string().valid(...orderStatuses).optional(),
+  paymentStatus: Joi.string().valid(...paymentStatuses).optional(),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
 });
 
 const updateOrderStatusSchema = Joi.object({
-  status: Joi.string()
-    .valid("pending", "processing", "shipped", "delivered", "cancelled")
-    .optional(),
-  paymentStatus: Joi.string().valid("pending", "paid", "failed", "refunded").optional(),
-}).or("status", "paymentStatus");
+  orderStatus: Joi.string().valid(...orderStatuses).required(),
+  reason: Joi.string().trim().max(500).allow("").default(""),
+});
+
+const updateDeliveryTimeSchema = Joi.object({
+  deliveryEstimatedTime: Joi.date().iso().greater("now").required(),
+});
+
+const paymentSucceededEventSchema = Joi.object({
+  eventId: Joi.string().trim().max(120).required(),
+  paymentId: objectId.required(),
+  orderId: objectId.required(),
+  userId: objectId.optional(),
+  amount: Joi.number().min(0).optional(),
+  paidAt: Joi.date().iso().optional(),
+});
 
 module.exports = {
   createOrderSchema,
   listOrderSchema,
   updateOrderStatusSchema,
+  updateDeliveryTimeSchema,
+  paymentSucceededEventSchema,
 };
