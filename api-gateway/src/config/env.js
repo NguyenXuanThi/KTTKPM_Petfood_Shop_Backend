@@ -40,6 +40,8 @@ module.exports = {
   orderServiceUrl: process.env.ORDER_SERVICE_URL,
   paymentServiceUrl: process.env.PAYMENT_SERVICE_URL,
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
+  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
+  chatServiceUrl: process.env.CHAT_SERVICE_URL || "http://localhost:3012", // User-Admin chat
 
   rateLimitWindowMs: Number(
     process.env.API_GATEWAY_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000,

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Review = require("../models/Review");
 const { getUserSnapshot } = require("./userClient");
+const moderationClient = require("./moderationClient");
 
 const toObjectId = (value) => new mongoose.Types.ObjectId(value);
 
@@ -87,6 +88,22 @@ const upsertReview = async (productId, userId, payload) => {
   await ensureActiveProduct(productId);
   ensureObjectId(userId, "Invalid user id");
 
+  // Kiểm tra nội dung comment với AI moderation
+  if (payload.comment && payload.comment.trim().length > 0) {
+    console.log('Checking comment moderation:', payload.comment);
+    const moderationResult = await moderationClient.checkComment(payload.comment);
+    console.log('Moderation result:', moderationResult);
+
+    if (moderationResult.isViolation) {
+      const error = new Error(
+        `Nội dung bình luận vi phạm tiêu chuẩn cộng đồng: ${moderationResult.reason || 'Vui lòng sử dụng ngôn từ phù hợp'}`
+      );
+      error.statusCode = 400;
+      error.moderationResult = moderationResult;
+      throw error;
+    }
+  }
+
   const userSnapshot = await getUserSnapshot(userId);
   const existingReview = await Review.findOne({ productId, userId });
 
@@ -95,7 +112,6 @@ const upsertReview = async (productId, userId, payload) => {
     existingReview.comment = payload.comment;
     existingReview.fullName = userSnapshot.fullName;
     existingReview.avatarUrl = userSnapshot.avatarUrl;
-    // Future: do not auto-reset moderation/verified state without explicit review workflow.
     await existingReview.save();
     return formatReview(existingReview);
   }
@@ -107,7 +123,7 @@ const upsertReview = async (productId, userId, payload) => {
     avatarUrl: userSnapshot.avatarUrl,
     rating: payload.rating,
     comment: payload.comment,
-    verifiedPurchase: false, // Future: set true after order-service confirms purchase.
+    verifiedPurchase: false,
   });
 
   return formatReview(review);
@@ -137,13 +153,29 @@ const updateReview = async (reviewId, userId, payload) => {
   }
 
   await ensureActiveProduct(review.productId.toString());
+
+  // Kiểm tra nội dung comment với AI moderation nếu có cập nhật
+  if (payload.comment !== undefined && payload.comment.trim().length > 0) {
+    console.log('Checking updated comment moderation:', payload.comment);
+    const moderationResult = await moderationClient.checkComment(payload.comment);
+    console.log('Moderation result:', moderationResult);
+
+    if (moderationResult.isViolation) {
+      const error = new Error(
+        `Nội dung bình luận vi phạm tiêu chuẩn cộng đồng: ${moderationResult.reason || 'Vui lòng sử dụng ngôn từ phù hợp'}`
+      );
+      error.statusCode = 400;
+      error.moderationResult = moderationResult;
+      throw error;
+    }
+  }
+
   const userSnapshot = await getUserSnapshot(userId);
 
   if (payload.rating !== undefined) review.rating = payload.rating;
   if (payload.comment !== undefined) review.comment = payload.comment;
   review.fullName = userSnapshot.fullName;
   review.avatarUrl = userSnapshot.avatarUrl;
-  // Future: AI moderation hook can inspect updated comment before save.
   await review.save();
 
   return formatReview(review);

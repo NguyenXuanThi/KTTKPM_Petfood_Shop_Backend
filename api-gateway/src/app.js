@@ -22,6 +22,8 @@ const paymentProxy = require("./routes/paymentProxy");
 const notificationProxy = require("./routes/notificationProxy");
 const adminOrderProxy = require("./routes/adminOrderProxy");
 const adminPaymentProxy = require("./routes/adminPaymentProxy");
+const aiProxy = require("./routes/aiProxy");
+const chatProxy = require("./routes/chatProxy");
 
 const app = express();
 
@@ -105,6 +107,8 @@ app.get("/api/health", (req, res) => {
       notifications: "/api/notifications/*",
       adminOrders: "/api/admin/orders/*",
       adminPayments: "/api/admin/payments/*",
+      ai: "/api/ai/*",
+      chat: "/api/chat/*",
     },
   });
 });
@@ -126,6 +130,10 @@ app.use("/api/coupons", requireAuthForCouponRoutes, requireAdminForCouponManagem
 app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
 app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
+
+// AI and Chat services (public access for AI chatbot, auth for user-admin chat)
+app.use("/api/ai", aiProxy);
+app.use("/api/chat", requireAuth, chatProxy);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
