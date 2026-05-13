@@ -53,6 +53,10 @@ const emailParamSchema = Joi.object({
   email: Joi.string().trim().email().required(),
 });
 
+const searchQuerySchema = Joi.object({
+  q: Joi.string().trim().min(1).max(100).required(),
+});
+
 module.exports = {
   createUserSchema,
   updateProfileSchema,
@@ -63,4 +67,5 @@ module.exports = {
   listUsersQuerySchema,
   idParamSchema,
   emailParamSchema,
+  searchQuerySchema,
 };

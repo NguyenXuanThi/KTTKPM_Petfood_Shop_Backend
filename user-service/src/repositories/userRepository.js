@@ -55,6 +55,18 @@ const listUsers = async ({
   };
 };
 
+const searchUsers = async (q) => {
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = { $regex: escaped, $options: "i" };
+
+  return User.find({
+    $or: [{ fullName: regex }, { email: regex }],
+  })
+    .select("_id fullName email avatarUrl")
+    .limit(10)
+    .lean();
+};
+
 const findInactiveCandidates = async (cutoffDate) =>
   User.find({
     isActive: true,
@@ -66,5 +78,6 @@ module.exports = {
   findById,
   findByEmail,
   listUsers,
+  searchUsers,
   findInactiveCandidates,
 };

@@ -56,10 +56,14 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 module.exports = mongoose.model("User", userSchema);

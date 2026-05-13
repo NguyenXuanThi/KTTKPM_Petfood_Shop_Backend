@@ -1,7 +1,8 @@
 const express = require("express");
 const userController = require("../controllers/userController");
 const wishlistController = require("../controllers/wishlistController");
-const { requireAuth } = require("../middlewares/authMiddleware");
+const addressController = require("../controllers/addressController");
+const { requireAuth, requireInternal } = require("../middlewares/authMiddleware");
 const { requireAdmin } = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
@@ -27,8 +28,27 @@ router.delete(
   wishlistController.removeFromMyWishlist,
 );
 
+// User address endpoints
+router.get("/addresses", requireAuth, addressController.listMyAddresses);
+router.post("/addresses", requireAuth, addressController.createAddress);
+router.patch("/addresses/:id", requireAuth, addressController.updateAddress);
+router.patch(
+  "/addresses/:id/default",
+  requireAuth,
+  addressController.setDefaultAddress,
+);
+router.delete("/addresses/:id", requireAuth, addressController.deleteAddress);
+
+// Internal endpoint for order-service checkout snapshot
+router.get(
+  "/addresses/:id/internal",
+  requireInternal,
+  addressController.getAddressInternal,
+);
+
 // Admin endpoints
 router.get("/", requireAuth, requireAdmin, userController.listUsers);
+router.get("/search", requireAuth, requireAdmin, userController.searchUsers);
 router.patch(
   "/:id/role",
   requireAuth,
