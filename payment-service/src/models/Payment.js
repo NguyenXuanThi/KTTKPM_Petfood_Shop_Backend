@@ -1,56 +1,67 @@
 const mongoose = require("mongoose");
 
+const PAYMENT_METHODS = ["cash", "banking"];
+const PAYMENT_STATUSES = ["unpaid", "pending", "waiting_verify", "paid", "failed"];
+
 const paymentSchema = new mongoose.Schema(
   {
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
       index: true,
+      unique: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
       index: true,
     },
+    paymentMethod: {
+      type: String,
+      enum: PAYMENT_METHODS,
+      required: true,
+    },
     amount: {
       type: Number,
       required: true,
       min: 0,
     },
-    // VNPay transaction reference
-    vnpTxnRef: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
-    // VNPay transaction number (returned after payment)
-    vnpTransactionNo: {
-      type: String,
-      default: null,
-    },
-    vnpBankCode: {
-      type: String,
-      default: null,
-    },
-    vnpPayDate: {
-      type: String,
-      default: null,
-    },
     status: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
-      default: "PENDING",
+      enum: PAYMENT_STATUSES,
+      required: true,
       index: true,
     },
-    // Raw VNPay return params for audit
-    vnpReturnParams: {
-      type: mongoose.Schema.Types.Mixed,
+    proofImageUrl: {
+      type: String,
+      default: "",
+    },
+    proofImagePublicId: {
+      type: String,
+      default: "",
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
       default: null,
-      select: false,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectedReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-module.exports = mongoose.model("Payment", paymentSchema);
+paymentSchema.index({ paymentMethod: 1, status: 1, createdAt: -1 });
+
+module.exports = {
+  Payment: mongoose.model("Payment", paymentSchema),
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+};

@@ -22,6 +22,7 @@ const sendReactivationRequestEmail = async ({
     to: allowedRecipient,
     subject,
     text,
+    enforceAllowedRecipient: true,
   });
 
   return {
@@ -30,6 +31,50 @@ const sendReactivationRequestEmail = async ({
   };
 };
 
+const formatDiscount = ({ type, discountValue }) => {
+  if (type === "percentage") return `${discountValue}% off`;
+  return `$${discountValue} off`;
+};
+
+const sendCouponAssignedEmail = async ({
+  email,
+  fullName,
+  couponCode,
+  discountValue,
+  type,
+  expiresAt,
+}) => {
+  const subject = "You received a new coupon!";
+  const discountText = formatDiscount({ type, discountValue });
+  const expiresAtText = new Date(expiresAt).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+
+  const text = [
+    `Hello ${fullName},`,
+    "",
+    `You have received a new coupon: ${couponCode}`,
+    `Discount: ${discountText}`,
+    `Expires at: ${expiresAtText}`,
+    "",
+    "Use it soon and enjoy your shopping at PetFood!",
+  ].join("\n");
+
+  await sendEmail({
+    to: email,
+    subject,
+    text,
+    enforceAllowedRecipient: false,
+  });
+
+  return {
+    message: "Coupon assigned email sent",
+    to: email,
+  };
+};
+
 module.exports = {
   sendReactivationRequestEmail,
+  sendCouponAssignedEmail,
 };

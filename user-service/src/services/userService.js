@@ -312,6 +312,11 @@ const autoDeactivateInactiveUsers = async ({
   };
 };
 
+const searchUsers = async (q) => {
+  if (!q || q.trim().length < 1) return [];
+  return userRepository.searchUsers(q.trim());
+};
+
 module.exports = {
   createUser,
   getProfile,
@@ -328,4 +333,5 @@ module.exports = {
   markLastLogin,
   markReactivationRequested,
   autoDeactivateInactiveUsers,
+  searchUsers,
 };

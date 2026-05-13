@@ -7,5 +7,6 @@ router.post(
   "/email/reactivation-request",
   notificationController.sendReactivationRequest,
 );
+router.post("/coupon-assigned", notificationController.sendCouponAssigned);
 
 module.exports = router;

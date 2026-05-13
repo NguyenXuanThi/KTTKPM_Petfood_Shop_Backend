@@ -1,35 +1,41 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
-const { createProxyMiddleware } = require("http-proxy-middleware");
-const {
-  corsOrigin,
-  authServiceUrl,
-  productServiceUrl,
-  cartServiceUrl,
-  categoryServiceUrl,
-  orderServiceUrl,
-  uploadServiceUrl,
-  userServiceUrl,
-  paymentServiceUrl,
-  rateLimitWindowMs,
-  rateLimitMax,
-} = require("./config/env");
+
+const { corsOrigin, rateLimitWindowMs, rateLimitMax } = require("./config/env");
+const { loggerMiddleware } = require("./middlewares/loggerMiddleware");
+const { requireAuth } = require("./middlewares/authMiddleware");
+const { requireAdmin } = require("./middlewares/adminMiddleware");
+const { notFoundHandler, errorHandler } = require("./middlewares/errorMiddleware");
+
+const authProxy = require("./routes/authProxy");
+const userProxy = require("./routes/userProxy");
+const productProxy = require("./routes/productProxy");
+const categoryProxy = require("./routes/categoryProxy");
+const cartProxy = require("./routes/cartProxy");
+const uploadProxy = require("./routes/uploadProxy");
+const couponProxy = require("./routes/couponProxy");
+const orderProxy = require("./routes/orderProxy");
+const paymentProxy = require("./routes/paymentProxy");
+const notificationProxy = require("./routes/notificationProxy");
+const adminOrderProxy = require("./routes/adminOrderProxy");
+const adminPaymentProxy = require("./routes/adminPaymentProxy");
 
 const app = express();
 
 app.use(helmet());
 app.use(
   cors({
-    origin: corsOrigin === "*" ? true : corsOrigin,
+    origin: corsOrigin,
     credentials: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-internal-key", "x-cart-token"],
   }),
 );
 app.use(compression());
-app.use(morgan("dev"));
+app.use(loggerMiddleware);
 
 const apiLimiter = rateLimit({
   windowMs: rateLimitWindowMs,
@@ -37,106 +43,91 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
+    success: false,
     message: "Too many requests. Please try again later.",
   },
 });
 
-const createServiceProxy = (serviceName, target, prefixPath) =>
-  createProxyMiddleware({
-    target,
-    changeOrigin: true,
-    xfwd: true,
-    proxyTimeout: 30000,
-    timeout: 30000,
-    pathRewrite: (path) => {
-      // Strip trailing slash (except root) to avoid route mismatch
-      const cleanPath = path === "/" ? "" : path.replace(/\/$/, "");
-      return `${prefixPath}${cleanPath}`;
-    },
-    on: {
-      error: (error, req, res) => {
-        if (!res.headersSent) {
-          res.status(502).json({
-            message: `${serviceName} is unavailable`,
-            error: error.message,
-          });
-        }
-      },
-    },
+const requireAdminOnWriteMethods = (req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    return next();
+  }
+
+  return requireAuth(req, res, (authErr) => {
+    if (authErr) return next(authErr);
+    return requireAdmin(req, res, next);
   });
+};
+
+const requireAuthForCouponRoutes = (req, res, next) => {
+  if (req.method === "GET" && req.path === "/") {
+    return next();
+  }
+
+  return requireAuth(req, res, next);
+};
+
+const requireAdminForCouponManagement = (req, res, next) => {
+  const isMyCouponEndpoint = req.method === "GET" && req.path.startsWith("/my");
+  if (isMyCouponEndpoint) {
+    return next();
+  }
+
+  if (["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) {
+    return requireAdmin(req, res, next);
+  }
+
+  return next();
+};
 
 app.get("/health", (req, res) => {
-  res.status(200).json({
+  return res.status(200).json({
+    success: true,
     service: "api-gateway",
     status: "ok",
   });
 });
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
+  return res.status(200).json({
+    success: true,
     gateway: "ok",
     routes: {
       auth: "/api/auth/*",
-      product: "/api/products/*",
-      cart: "/api/cart/*",
-      category: "/api/categories/*",
-      orders: "/api/orders/*",
-      adminOrders: "/api/admin/orders/*",
       users: "/api/users/*",
+      products: "/api/products/*",
+      categories: "/api/categories/*",
+      cart: "/api/cart/*",
+      uploads: "/api/uploads/*",
+      coupons: "/api/coupons/*",
+      orders: "/api/orders/*",
+      payments: "/api/payments/*",
+      notifications: "/api/notifications/*",
+      adminOrders: "/api/admin/orders/*",
+      adminPayments: "/api/admin/payments/*",
     },
   });
 });
 
 app.use("/api", apiLimiter);
-app.use(
-  "/api/auth",
-  createServiceProxy("auth-service", authServiceUrl, "/api/auth"),
-);
-app.use(
-  "/api/products",
-  createServiceProxy("product-service", productServiceUrl, "/api/products"),
-);
-app.use(
-  "/api/cart",
-  createServiceProxy("cart-service", cartServiceUrl, "/api/cart"),
-);
-app.use(
-  "/api/categories",
-  createServiceProxy("category-service", categoryServiceUrl, "/api/categories"),
-);
-app.use(
-  "/api/orders",
-  createServiceProxy("order-service", orderServiceUrl, "/api/orders"),
-);
-app.use(
-  "/api/admin/orders",
-  createServiceProxy("order-service", orderServiceUrl, "/api/orders/admin"),
-);
-app.use(
-  "/api/upload",
-  createServiceProxy("upload-service", uploadServiceUrl, "/api/upload"),
-);
-app.use(
-  "/api/users",
-  createServiceProxy("user-service", userServiceUrl, "/api/users"),
-);
-app.use(
-  "/api/payments",
-  createServiceProxy("payment-service", paymentServiceUrl, "/api/payments"),
-);
 
-app.use((req, res) => {
-  res.status(404).json({
-    message: "Route not found in gateway",
-  });
-});
+app.use("/api/auth", authProxy);
+app.use("/api/products", requireAdminOnWriteMethods, productProxy);
+app.use("/api/categories", requireAdminOnWriteMethods, categoryProxy);
+app.use("/api/cart", cartProxy);
 
-app.use((error, req, res, next) => {
-  const statusCode = error.statusCode || 500;
+app.use("/api/users", requireAuth, userProxy);
+app.use("/api/orders", requireAuth, orderProxy);
+app.use("/api/payments", requireAuth, paymentProxy);
+app.use("/api/uploads", requireAuth, uploadProxy);
 
-  return res.status(statusCode).json({
-    message: error.message || "Internal server error",
-  });
-});
+app.use("/api/coupons", requireAuthForCouponRoutes, requireAdminForCouponManagement, couponProxy);
+
+app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
+app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
+app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
+
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 module.exports = app;

@@ -10,6 +10,16 @@ const reactivationRequestSchema = Joi.object({
   inactiveReason: Joi.string().trim().min(1).max(500).required(),
 });
 
+const couponAssignedSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+  fullName: Joi.string().trim().min(2).max(100).required(),
+  couponCode: Joi.string().trim().min(3).max(50).required(),
+  discountValue: Joi.number().positive().required(),
+  type: Joi.string().valid("percentage", "fixed").required(),
+  expiresAt: Joi.date().iso().required(),
+});
+
 module.exports = {
   reactivationRequestSchema,
+  couponAssignedSchema,
 };

@@ -17,8 +17,15 @@ const assertAllowedRecipient = (to) => {
   }
 };
 
-const sendEmail = async ({ to, subject, text }) => {
-  assertAllowedRecipient(to);
+const sendEmail = async ({
+  to,
+  subject,
+  text,
+  enforceAllowedRecipient = true,
+}) => {
+  if (enforceAllowedRecipient) {
+    assertAllowedRecipient(to);
+  }
 
   return transporter.sendMail({
     from: `"PetFood System" <${emailUser}>`,

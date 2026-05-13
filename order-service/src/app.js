@@ -13,7 +13,7 @@ app.use(
   cors({
     origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
-  })
+  }),
 );
 app.use(compression());
 app.use(morgan("dev"));
@@ -21,15 +21,18 @@ app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.status(200).json({
+    success: true,
     service: "order-service",
     status: "ok",
   });
 });
 
-app.use("/api/orders", orderRoutes);
+app.use("/api", orderRoutes);
+app.use("/", orderRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
+    success: false,
     message: "Route not found",
   });
 });
@@ -37,6 +40,7 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   if (error.isJoi) {
     return res.status(400).json({
+      success: false,
       message: "Validation failed",
       errors: error.details.map((detail) => detail.message),
     });
@@ -45,6 +49,7 @@ app.use((error, req, res, next) => {
   const statusCode = error.statusCode || 500;
 
   return res.status(statusCode).json({
+    success: false,
     message: error.message || "Internal server error",
   });
 });

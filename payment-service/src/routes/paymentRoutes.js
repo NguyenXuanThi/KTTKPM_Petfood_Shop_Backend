@@ -1,21 +1,36 @@
 const express = require("express");
-const { requireUserAuth } = require("../middlewares/authMiddleware");
-const {
-  createVnpayPayment,
-  vnpayReturn,
-  vnpayVerify,
-  getPaymentStatus,
-} = require("../controllers/paymentController");
+const paymentController = require("../controllers/paymentController");
+const { requireUserAuth, requireAdmin } = require("../middlewares/authMiddleware");
+const { upload } = require("../middlewares/uploadMiddleware");
 
 const router = express.Router();
 
-// VNPay callbacks — no auth
-router.get("/vnpay/return", vnpayReturn);
-router.get("/vnpay/verify", vnpayVerify);
+router.post(
+  "/payments/banking/upload-proof",
+  requireUserAuth,
+  upload.single("file"),
+  paymentController.uploadBankingProof,
+);
 
-// Protected routes
-router.use(requireUserAuth);
-router.post("/vnpay/create", createVnpayPayment);
-router.get("/status/:txnRef", getPaymentStatus);
+router.get(
+  "/admin/payments/banking/pending",
+  requireUserAuth,
+  requireAdmin,
+  paymentController.listPendingBankingPayments,
+);
+
+router.patch(
+  "/admin/payments/:id/approve",
+  requireUserAuth,
+  requireAdmin,
+  paymentController.approvePayment,
+);
+
+router.patch(
+  "/admin/payments/:id/reject",
+  requireUserAuth,
+  requireAdmin,
+  paymentController.rejectPayment,
+);
 
 module.exports = router;

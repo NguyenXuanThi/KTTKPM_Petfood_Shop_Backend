@@ -13,13 +13,12 @@ cloudinary.config({
 });
 
 class CloudinaryProvider extends UploadProvider {
-  async upload({ buffer, folder, key }) {
+  async upload({ buffer, key }) {
     const publicId = key.replace(/\.[^.]+$/, "");
 
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
-          folder,
           public_id: publicId,
           resource_type: "image",
           use_filename: false,
@@ -30,7 +29,7 @@ class CloudinaryProvider extends UploadProvider {
         (error, response) => {
           if (error) return reject(error);
           return resolve(response);
-        }
+        },
       );
 
       stream.end(buffer);

@@ -7,10 +7,9 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 const requiredEnvVars = [
   "PAYMENT_MONGODB_URI",
   "JWT_SECRET",
-  "VNPAY_TMN_CODE",
-  "VNPAY_HASH_SECRET",
-  "VNPAY_URL",
-  "VNPAY_RETURN_URL",
+  "ORDER_SERVICE_URL",
+  "UPLOAD_SERVICE_URL",
+  "ORDER_INTERNAL_KEY",
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -25,15 +24,9 @@ module.exports = {
   mongoUri: process.env.PAYMENT_MONGODB_URI,
   corsOrigin: process.env.PAYMENT_CORS_ORIGIN || "*",
   jwtSecret: process.env.JWT_SECRET,
-
-  vnpay: {
-    tmnCode: process.env.VNPAY_TMN_CODE,
-    hashSecret: process.env.VNPAY_HASH_SECRET,
-    url: process.env.VNPAY_URL,
-    // Add ngrok bypass header param to return URL
-    returnUrl: process.env.VNPAY_RETURN_URL,
-  },
-
-  orderServiceUrl: process.env.ORDER_SERVICE_URL || "http://localhost:3008",
-  orderServiceTimeoutMs: Number(process.env.PAYMENT_ORDER_TIMEOUT_MS || 5000),
+  orderServiceUrl: process.env.ORDER_SERVICE_URL,
+  orderServiceTimeoutMs: Number(process.env.PAYMENT_ORDER_SERVICE_TIMEOUT_MS || 5000),
+  uploadServiceUrl: process.env.UPLOAD_SERVICE_URL,
+  uploadServiceTimeoutMs: Number(process.env.PAYMENT_UPLOAD_SERVICE_TIMEOUT_MS || 10000),
+  orderInternalKey: process.env.ORDER_INTERNAL_KEY,
 };

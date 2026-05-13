@@ -1,24 +1,73 @@
 const express = require("express");
 const orderController = require("../controllers/orderController");
-const { requireUserAuth, requireAdmin } = require("../middlewares/authMiddleware");
+const {
+  requireUserAuth,
+  requireAdmin,
+  requireInternal,
+} = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 
-// Public internal route — called by payment-service (no user auth needed)
-router.post("/events/payment-succeeded", orderController.handlePaymentSucceeded);
+// User APIs
+router.post("/orders", requireUserAuth, orderController.createOrder);
+router.get("/orders/my", requireUserAuth, orderController.getMyOrders);
+router.get(
+  "/orders/my/shipping",
+  requireUserAuth,
+  orderController.getMyShippingOrders,
+);
+router.get("/orders/:id", requireUserAuth, orderController.getOrderById);
 
-// All routes below require user auth
-router.use(requireUserAuth);
+// Admin APIs
+router.get("/admin/orders", requireUserAuth, requireAdmin, orderController.listAdminOrders);
+router.get(
+  "/admin/orders/pending",
+  requireUserAuth,
+  requireAdmin,
+  orderController.listPendingOrders,
+);
+router.patch(
+  "/admin/orders/:id/confirm",
+  requireUserAuth,
+  requireAdmin,
+  orderController.confirmOrder,
+);
+router.patch(
+  "/admin/orders/:id/shipping",
+  requireUserAuth,
+  requireAdmin,
+  orderController.markShipping,
+);
+router.patch(
+  "/admin/orders/:id/delivered",
+  requireUserAuth,
+  requireAdmin,
+  orderController.markDelivered,
+);
+router.patch(
+  "/admin/orders/:id/completed",
+  requireUserAuth,
+  requireAdmin,
+  orderController.markCompleted,
+);
+router.patch(
+  "/admin/orders/:id/cancel",
+  requireUserAuth,
+  requireAdmin,
+  orderController.cancelOrder,
+);
+router.patch(
+  "/admin/orders/:id/payment-status",
+  requireUserAuth,
+  requireAdmin,
+  orderController.updateCodPaymentStatus,
+);
 
-router.post("/", orderController.createOrder);
-router.get("/me", orderController.getMyOrders);
-router.get("/my-orders", orderController.getMyOrders);
-router.get("/admin/waiting-processing", requireAdmin, orderController.listWaitingForProcessing);
-router.get("/admin/:id", requireAdmin, orderController.getOrder);
-router.patch("/admin/:id/delivery-time", requireAdmin, orderController.updateDeliveryTime);
-router.patch("/admin/:id/status", requireAdmin, orderController.updateOrderStatus);
-router.get("/admin", requireAdmin, orderController.listOrders);
-router.patch("/:id/delivery-popup-seen", orderController.markDeliveryPopupSeen);
-router.get("/:id", orderController.getOrder);
+// Internal API for payment-service
+router.patch(
+  "/internal/orders/:id/payment-status",
+  requireInternal,
+  orderController.updatePaymentStatusInternal,
+);
 
 module.exports = router;

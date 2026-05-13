@@ -13,32 +13,50 @@ app.use(
   cors({
     origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
-  })
+  }),
 );
 app.use(compression());
 app.use(morgan("dev"));
 app.use(express.json());
 
-// Bypass ngrok browser warning for all requests
-app.use((_req, res, next) => {
-  res.setHeader("ngrok-skip-browser-warning", "true");
-  next();
-});
 app.get("/health", (_req, res) => {
-  res.status(200).json({ service: "payment-service", status: "ok" });
+  return res.status(200).json({
+    success: true,
+    service: "payment-service",
+    status: "ok",
+  });
 });
 
-app.use("/api/payments", paymentRoutes);
+app.use("/api", paymentRoutes);
+app.use("/", paymentRoutes);
 
-// 404
-app.use((_req, res) => {
-  res.status(404).json({ message: "Route not found" });
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
 });
 
-// Error handler
 app.use((error, _req, res, _next) => {
+  if (error.isJoi) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed",
+      errors: error.details.map((detail) => detail.message),
+    });
+  }
+
+  if (error.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({
+      success: false,
+      message: "File size exceeds 5MB limit",
+    });
+  }
+
   const statusCode = error.statusCode || 500;
+
   return res.status(statusCode).json({
+    success: false,
     message: error.message || "Internal server error",
   });
 });

@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { jwtSecret } = require("../config/env");
+const { jwtSecret, internalKey } = require("../config/env");
 
 const requireUserAuth = (req, res, next) => {
   const authorizationHeader = req.headers.authorization || "";
@@ -31,7 +31,21 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
+const requireInternal = (req, res, next) => {
+  const key = req.headers["x-internal-key"];
+
+  if (!key || key !== internalKey) {
+    return res.status(403).json({
+      success: false,
+      message: "Internal service key is required",
+    });
+  }
+
+  return next();
+};
+
 module.exports = {
   requireUserAuth,
   requireAdmin,
+  requireInternal,
 };

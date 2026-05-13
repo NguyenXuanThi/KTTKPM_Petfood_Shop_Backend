@@ -9,6 +9,7 @@ const {
   listUsersQuerySchema,
   idParamSchema,
   emailParamSchema,
+  searchQuerySchema,
 } = require("../validators/userValidator");
 
 const createUser = async (req, res, next) => {
@@ -291,6 +292,23 @@ const markReactivationRequested = async (req, res, next) => {
   }
 };
 
+// GET /users/search?q= — Admin searches users by name or email
+const searchUsers = async (req, res, next) => {
+  try {
+    const { q } = await searchQuerySchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const users = await userService.searchUsers(q);
+
+    return res.status(200).json({ users });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createUser,
   getUserById,
@@ -307,4 +325,5 @@ module.exports = {
   restoreUser,
   markLastLogin,
   markReactivationRequested,
+  searchUsers,
 };

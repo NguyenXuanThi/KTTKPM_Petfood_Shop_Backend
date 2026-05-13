@@ -1,316 +1,260 @@
+const axios = require("axios");
 const mongoose = require("mongoose");
 const orderRepository = require("../repositories/orderRepository");
+const {
+  userServiceUrl,
+  userInternalKey,
+  userServiceTimeoutMs,
+} = require("../config/env");
 
-const legacyStatusByOrderStatus = {
-  PENDING_PAYMENT: "pending",
-  PAID: "processing",
-  WAITING_FOR_PROCESSING: "processing",
-  PROCESSING: "processing",
-  WAITING_FOR_DELIVERY: "shipped",
-  DELIVERING: "shipped",
-  DELIVERED: "delivered",
-  CANCELLED: "cancelled",
-  FAILED: "cancelled",
-  REFUNDED: "cancelled",
+const createError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 };
 
-const legacyPaymentStatusByPaymentStatus = {
-  PENDING: "pending",
-  PAID: "paid",
-  FAILED: "failed",
-  REFUNDED: "refunded",
-};
-
-const allowedTransitions = {
-  PENDING_PAYMENT: ["PAID", "CANCELLED", "FAILED"],
-  PAID: ["WAITING_FOR_PROCESSING", "REFUNDED"],
-  WAITING_FOR_PROCESSING: ["PROCESSING", "CANCELLED", "REFUNDED"],
-  PROCESSING: ["WAITING_FOR_DELIVERY", "CANCELLED", "REFUNDED"],
-  WAITING_FOR_DELIVERY: ["DELIVERING", "CANCELLED"],
-  DELIVERING: ["DELIVERED"],
-  DELIVERED: ["REFUNDED"],
-  CANCELLED: [],
-  FAILED: [],
-  REFUNDED: [],
-};
-
-const ensureObjectId = (id, message = "Invalid order id") => {
+const ensureObjectId = (id, message = "Invalid id") => {
   if (!mongoose.isValidObjectId(id)) {
-    const error = new Error(message);
-    error.statusCode = 400;
-    throw error;
+    throw createError(message, 400);
   }
 };
 
 const normalizeItem = (item) => ({
   productId: item.productId,
   name: item.name,
-  price: Number(item.price),
-  quantity: Number(item.quantity),
   imageUrl: item.imageUrl || "",
+  quantity: Number(item.quantity),
+  price: Number(item.price),
 });
 
 const calculateTotalAmount = (items) =>
-  items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+  items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-const toClientOrder = (order) => {
-  if (!order) return order;
-
-  const object = typeof order.toObject === "function" ? order.toObject() : { ...order };
-  const orderStatus = object.orderStatus || "PENDING_PAYMENT";
-  const paymentStatus =
-    object.paymentStatus && object.paymentStatus === object.paymentStatus.toUpperCase()
-      ? object.paymentStatus
-      : String(object.paymentStatus || "pending").toUpperCase();
-
-  return {
-    ...object,
-    orderStatus,
-    paymentStatus,
-    status: object.status || legacyStatusByOrderStatus[orderStatus] || "pending",
-    paymentStatusLabel: legacyPaymentStatusByPaymentStatus[paymentStatus] || "pending",
-  };
-};
-
-const assertTransition = (currentStatus, nextStatus) => {
-  if (currentStatus === nextStatus) return;
-
-  if (!allowedTransitions[currentStatus]?.includes(nextStatus)) {
-    const error = new Error(`Cannot change order from ${currentStatus} to ${nextStatus}`);
-    error.statusCode = 409;
-    throw error;
+const ensureOrderOwnership = (order, auth) => {
+  const isOwner = order.userId.toString() === auth.sub;
+  const isAdmin = auth.role === "admin";
+  if (!isOwner && !isAdmin) {
+    throw createError("You do not have permission to view this order", 403);
   }
 };
 
-const recordStatusHistory = async ({ order, fromStatus, toStatus, changedBy, reason = "" }) => {
-  if (fromStatus === toStatus) return;
+const fetchAddressSnapshot = async ({ userId, addressId }) => {
+  try {
+    const { data } = await axios.get(
+      `${userServiceUrl}/users/addresses/${addressId}/internal`,
+      {
+        timeout: userServiceTimeoutMs,
+        headers: {
+          "x-internal-key": userInternalKey,
+        },
+        params: { userId },
+      },
+    );
 
-  await orderRepository.createStatusHistory({
-    orderId: order._id,
-    fromStatus,
-    toStatus,
-    changedBy,
-    reason,
-  });
+    return data.shippingAddress;
+  } catch (error) {
+    console.error("[order-service] fetchAddressSnapshot failed:", {
+      url: `${userServiceUrl}/users/addresses/${addressId}/internal`,
+      userId,
+      addressId,
+      status: error.response?.status,
+      data: error.response?.data,
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.response) {
+      throw createError(
+        error.response.data?.message || "Failed to fetch address from user-service",
+        error.response.status,
+      );
+    }
+    throw createError("user-service is unavailable", 502);
+  }
 };
 
 const createOrder = async (userId, payload) => {
   ensureObjectId(userId, "Invalid user id");
+  ensureObjectId(payload.addressId, "Invalid address id");
 
   const items = payload.items.map(normalizeItem);
+  const totalAmount = calculateTotalAmount(items);
+  const paymentStatus = payload.paymentMethod === "cash" ? "unpaid" : "pending";
+
+  const shippingAddress = await fetchAddressSnapshot({
+    userId,
+    addressId: payload.addressId,
+  });
+
   const order = await orderRepository.create({
     userId,
     items,
-    shippingAddress: payload.shippingAddress,
+    totalAmount,
     paymentMethod: payload.paymentMethod,
-    paymentStatus: "PENDING",
-    orderStatus: "PENDING_PAYMENT",
-    status: "pending",
-    totalAmount: calculateTotalAmount(items),
+    paymentStatus,
+    orderStatus: "pending",
+    shippingAddress,
+    notes: payload.notes || "",
   });
 
-  return toClientOrder(order);
+  return order.toObject();
 };
 
 const getMyOrders = async (userId) => {
   ensureObjectId(userId, "Invalid user id");
-  const orders = await orderRepository.findByUserId(userId);
-  return orders.map(toClientOrder);
+  return orderRepository.findByUserId(userId);
 };
 
-const getOrder = async (orderId, auth) => {
-  ensureObjectId(orderId);
-
-  const order = await orderRepository.findById(orderId);
-
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const isOwner = order.userId.toString() === auth.sub;
-  const isAdmin = auth.role === "admin";
-
-  if (!isOwner && !isAdmin) {
-    const error = new Error("You do not have permission to view this order");
-    error.statusCode = 403;
-    throw error;
-  }
-
-  return toClientOrder(order);
-};
-
-const listOrders = async ({ status, orderStatus, paymentStatus, page, limit }) => {
-  const [orders, total] = await orderRepository.findAll({
-    status,
-    orderStatus,
-    paymentStatus,
-    page,
-    limit,
-  });
-
-  return {
-    orders: orders.map(toClientOrder),
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
-};
-
-const listWaitingForProcessing = async ({ page, limit }) => {
-  const [orders, total] = await orderRepository.findWaitingForProcessing({ page, limit });
-
-  return {
-    orders: orders.map(toClientOrder),
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
-};
-
-const updateDeliveryTime = async (orderId, adminId, deliveryEstimatedTime) => {
-  ensureObjectId(orderId);
-
-  const order = await orderRepository.findByIdForUpdate(orderId);
-
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (order.paymentStatus !== "PAID") {
-    const error = new Error("Only paid orders can have delivery time");
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const nextDate = new Date(deliveryEstimatedTime);
-  if (Number.isNaN(nextDate.getTime()) || nextDate <= new Date()) {
-    const error = new Error("Delivery time must be in the future");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  order.deliveryEstimatedTime = nextDate;
-  await order.save();
-
-  return toClientOrder(order);
-};
-
-const updateOrderStatus = async (orderId, payload, auth) => {
-  ensureObjectId(orderId);
-
-  const order = await orderRepository.findByIdForUpdate(orderId);
-
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const currentStatus = order.orderStatus || "PENDING_PAYMENT";
-  const nextStatus = payload.orderStatus;
-
-  assertTransition(currentStatus, nextStatus);
-
-  order.orderStatus = nextStatus;
-  order.status = legacyStatusByOrderStatus[nextStatus] || order.status;
-
-  if (nextStatus === "DELIVERED" && !order.deliveredAt) {
-    order.deliveredAt = new Date();
-    order.deliveryPopupSeen = false;
-  }
-
-  await order.save();
-
-  await recordStatusHistory({
-    order,
-    fromStatus: currentStatus,
-    toStatus: nextStatus,
-    changedBy: auth?.sub || "system",
-    reason: payload.reason,
-  });
-
-  return toClientOrder(order);
-};
-
-const handlePaymentSucceeded = async (event) => {
-  ensureObjectId(event.orderId);
-  ensureObjectId(event.paymentId, "Invalid payment id");
-
-  const order = await orderRepository.findByIdForUpdate(event.orderId);
-
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (order.processedEventIds?.includes(event.eventId)) {
-    return toClientOrder(order);
-  }
-
-  const fromStatus = order.orderStatus || "PENDING_PAYMENT";
-
-  order.paymentId = event.paymentId;
-  order.paymentStatus = "PAID";
-  order.orderStatus = "WAITING_FOR_PROCESSING";
-  order.status = "processing";
-  order.processedEventIds = [...(order.processedEventIds || []), event.eventId];
-
-  await order.save();
-
-  await recordStatusHistory({
-    order,
-    fromStatus,
-    toStatus: "WAITING_FOR_PROCESSING",
-    changedBy: "payment-service",
-    reason: "PaymentSucceeded",
-  });
-
-  return toClientOrder(order);
-};
-
-const markDeliveryPopupSeen = async (orderId, userId) => {
-  ensureObjectId(orderId);
+const getMyShippingOrders = async (userId) => {
   ensureObjectId(userId, "Invalid user id");
+  return orderRepository.findShippingByUserId(userId);
+};
 
+const getOrderById = async (orderId, auth) => {
+  ensureObjectId(orderId, "Invalid order id");
+  const order = await orderRepository.findById(orderId);
+  if (!order) throw createError("Order not found", 404);
+  ensureOrderOwnership(order, auth);
+  return order;
+};
+
+const listAdminOrders = async ({ page, limit, orderStatus }) => {
+  const [orders, total] = await orderRepository.findAll({ page, limit, orderStatus });
+  return {
+    orders,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+const getOrderForUpdate = async (orderId) => {
+  ensureObjectId(orderId, "Invalid order id");
   const order = await orderRepository.findByIdForUpdate(orderId);
+  if (!order) throw createError("Order not found", 404);
+  return order;
+};
 
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
+const confirmOrder = async (orderId) => {
+  const order = await getOrderForUpdate(orderId);
+
+  if (order.orderStatus !== "pending") {
+    throw createError("Only pending orders can be confirmed", 400);
   }
 
-  if (order.userId.toString() !== userId) {
-    const error = new Error("You do not have permission to update this order");
-    error.statusCode = 403;
-    throw error;
+  if (order.paymentMethod === "banking" && order.paymentStatus !== "paid") {
+    throw createError("Banking order can only be confirmed after payment is paid", 400);
   }
 
-  order.deliveryPopupSeen = true;
+  order.orderStatus = "confirmed";
+  order.confirmedAt = new Date();
   await order.save();
+  return order.toObject();
+};
 
-  return toClientOrder(order);
+const markShipping = async (orderId, estimatedDeliveryAt) => {
+  const order = await getOrderForUpdate(orderId);
+
+  if (order.orderStatus !== "confirmed") {
+    throw createError("Only confirmed orders can move to shipping", 400);
+  }
+
+  const estimateDate = new Date(estimatedDeliveryAt);
+  if (Number.isNaN(estimateDate.getTime())) {
+    throw createError("Invalid estimated delivery date", 400);
+  }
+
+  order.orderStatus = "shipping";
+  order.shippingStartedAt = new Date();
+  order.estimatedDeliveryAt = estimateDate;
+  await order.save();
+  return order.toObject();
+};
+
+const markDelivered = async (orderId) => {
+  const order = await getOrderForUpdate(orderId);
+  if (order.orderStatus !== "shipping") {
+    throw createError("Only shipping orders can be marked delivered", 400);
+  }
+
+  order.orderStatus = "delivered";
+  order.deliveredAt = new Date();
+  await order.save();
+  return order.toObject();
+};
+
+const markCompleted = async (orderId) => {
+  const order = await getOrderForUpdate(orderId);
+  if (order.orderStatus !== "delivered") {
+    throw createError("Only delivered orders can be marked completed", 400);
+  }
+
+  order.orderStatus = "completed";
+  order.completedAt = new Date();
+  await order.save();
+  return order.toObject();
+};
+
+const cancelOrder = async (orderId, reason = "") => {
+  const order = await getOrderForUpdate(orderId);
+  if (["completed", "cancelled"].includes(order.orderStatus)) {
+    throw createError("Order cannot be cancelled in current status", 400);
+  }
+
+  order.orderStatus = "cancelled";
+  order.cancelledAt = new Date();
+  if (reason) {
+    order.notes = order.notes ? `${order.notes}\nCancel reason: ${reason}` : `Cancel reason: ${reason}`;
+  }
+  await order.save();
+  return order.toObject();
+};
+
+const updateCodPaymentStatus = async (orderId, paymentStatus) => {
+  const order = await getOrderForUpdate(orderId);
+  if (order.paymentMethod !== "cash") {
+    throw createError("This endpoint is for cash orders only", 400);
+  }
+
+  if (order.paymentStatus === "paid") {
+    throw createError("Cash order payment is already paid", 400);
+  }
+
+  if (paymentStatus !== "paid") {
+    throw createError("Cash payment status can only transition to paid", 400);
+  }
+
+  order.paymentStatus = "paid";
+  await order.save();
+  return order.toObject();
+};
+
+const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
+  const order = await getOrderForUpdate(orderId);
+
+  if (order.paymentMethod !== "banking") {
+    throw createError("Internal payment status update is for banking orders", 400);
+  }
+
+  order.paymentStatus = paymentStatus;
+  await order.save();
+  return order.toObject();
 };
 
 module.exports = {
   createOrder,
   getMyOrders,
-  getOrder,
-  listOrders,
-  listWaitingForProcessing,
-  updateDeliveryTime,
-  updateOrderStatus,
-  handlePaymentSucceeded,
-  markDeliveryPopupSeen,
+  getMyShippingOrders,
+  getOrderById,
+  listAdminOrders,
+  confirmOrder,
+  markShipping,
+  markDelivered,
+  markCompleted,
+  cancelOrder,
+  updateCodPaymentStatus,
+  updatePaymentStatusInternal,
 };

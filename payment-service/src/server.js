@@ -5,6 +5,7 @@ const { mongoUri, port } = require("./config/env");
 const startServer = async () => {
   try {
     await connectDatabase(mongoUri);
+
     app.listen(port, () => {
       console.log(`payment-service is running on port ${port}`);
     });

@@ -1,7 +1,7 @@
 const Joi = require("joi");
 
 const uploadSchema = Joi.object({
-  type: Joi.string().valid("avatar", "product", "chat").required(),
+  type: Joi.string().valid("avatar", "product", "chat", "payment").required(),
 });
 
 const deleteFileSchema = Joi.object({
