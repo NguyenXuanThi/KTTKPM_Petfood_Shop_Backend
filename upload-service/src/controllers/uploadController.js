@@ -30,6 +30,29 @@ const upload = async (req, res, next) => {
   }
 };
 
+const uploadPaymentProof = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      const error = new Error("file is required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const result = await uploadService.uploadFile({
+      file: req.file,
+      type: "payment",
+    });
+
+    return res.status(201).json({
+      url: result.url,
+      publicId: result.publicId || result.key,
+      provider: result.provider,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const remove = async (req, res, next) => {
   try {
     const payload = await deleteFileSchema.validateAsync(req.body, {
@@ -64,6 +87,7 @@ const createPresignedUrl = async (req, res, next) => {
 
 module.exports = {
   upload,
+  uploadPaymentProof,
   remove,
   createPresignedUrl,
 };

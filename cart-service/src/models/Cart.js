@@ -80,6 +80,10 @@ const cartSchema = new mongoose.Schema(
         default: 0,
       },
     },
+    restoredOrderIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: [],
+    },
   },
   {
     timestamps: true,

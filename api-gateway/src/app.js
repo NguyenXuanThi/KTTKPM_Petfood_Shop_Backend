@@ -22,15 +22,14 @@ const paymentProxy = require("./routes/paymentProxy");
 const notificationProxy = require("./routes/notificationProxy");
 const adminOrderProxy = require("./routes/adminOrderProxy");
 const adminPaymentProxy = require("./routes/adminPaymentProxy");
-const aiProxy = require("./routes/aiProxy");
-const chatProxy = require("./routes/chatProxy");
+const statisticsProxy = require("./routes/statisticsProxy");
 
 const app = express();
 
 app.use(helmet());
 app.use(
   cors({
-    origin: corsOrigin,
+    origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-internal-key", "x-cart-token"],
@@ -70,8 +69,17 @@ const requireAuthForCouponRoutes = (req, res, next) => {
 };
 
 const requireAdminForCouponManagement = (req, res, next) => {
-  const isMyCouponEndpoint = req.method === "GET" && req.path.startsWith("/my");
-  if (isMyCouponEndpoint) {
+  const couponPath = req.path.startsWith("/api/coupons")
+    ? req.path.replace("/api/coupons", "") || "/"
+    : req.path;
+  const userAllowedRoutes = [
+    req.method === "GET" && couponPath.startsWith("/my"),
+    req.method === "GET" && couponPath.startsWith("/public"),
+    req.method === "GET" && couponPath.startsWith("/available"),
+    req.method === "POST" && couponPath === "/validate",
+  ];
+
+  if (userAllowedRoutes.some(Boolean)) {
     return next();
   }
 
@@ -127,6 +135,7 @@ app.use("/api/uploads", requireAuth, uploadProxy);
 
 app.use("/api/coupons", requireAuthForCouponRoutes, requireAdminForCouponManagement, couponProxy);
 
+app.use("/api/admin/statistics", requireAuth, requireAdmin, statisticsProxy);
 app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
 app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);

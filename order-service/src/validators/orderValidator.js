@@ -2,18 +2,11 @@ const Joi = require("joi");
 
 const objectId = Joi.string().trim().pattern(/^[a-f\d]{24}$/i);
 
-const orderItemSchema = Joi.object({
-  productId: objectId.required(),
-  name: Joi.string().trim().max(200).required(),
-  imageUrl: Joi.string().trim().allow("").default(""),
-  quantity: Joi.number().integer().min(1).required(),
-  price: Joi.number().min(0).required(),
-});
-
 const createOrderSchema = Joi.object({
-  items: Joi.array().items(orderItemSchema).min(1).required(),
-  paymentMethod: Joi.string().valid("cash", "banking", "vnpay").required(),
+  selectedCartItemIds: Joi.array().items(objectId.required()).min(1).unique().required(),
+  paymentMethod: Joi.string().valid("cash", "banking").required(),
   addressId: objectId.required(),
+  couponCode: Joi.string().trim().uppercase().min(3).max(50).allow("").optional(),
   notes: Joi.string().trim().max(1000).allow("").optional(),
 });
 
@@ -40,7 +33,7 @@ const codPaymentStatusSchema = Joi.object({
 
 const internalPaymentStatusSchema = Joi.object({
   paymentStatus: Joi.string()
-    .valid("pending", "waiting_verify", "paid", "failed", "unpaid")
+    .valid("pending", "waiting_verify", "paid", "failed", "unpaid", "expired")
     .required(),
 });
 

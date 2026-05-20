@@ -29,4 +29,6 @@ module.exports = {
   uploadServiceUrl: process.env.UPLOAD_SERVICE_URL,
   uploadServiceTimeoutMs: Number(process.env.PAYMENT_UPLOAD_SERVICE_TIMEOUT_MS || 10000),
   orderInternalKey: process.env.ORDER_INTERNAL_KEY,
+  paymentInternalKey:
+    process.env.PAYMENT_INTERNAL_KEY || process.env.ORDER_INTERNAL_KEY,
 };

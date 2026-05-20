@@ -3,6 +3,9 @@ const {
   createCouponSchema,
   assignCouponSchema,
   idParamSchema,
+  validateCouponSchema,
+  usableCouponsQuerySchema,
+  markCouponUsedSchema,
 } = require("../validators/couponValidator");
 
 // POST /coupons — Admin creates a coupon
@@ -59,9 +62,96 @@ const assignCoupon = async (req, res, next) => {
 // GET /coupons/my — Authenticated user views their coupons
 const getMyCoupons = async (req, res, next) => {
   try {
-    const coupons = await couponService.getMyCoupons(req.auth.sub);
+    const query = await usableCouponsQuerySchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+    const coupons = await couponService.getMyCoupons(req.auth.sub, {
+      ...query,
+      onlyUsable: req.query.orderAmount !== undefined,
+    });
 
     return res.status(200).json({ coupons });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getPublicCoupons = async (req, res, next) => {
+  try {
+    const query = await usableCouponsQuerySchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+    const coupons = await couponService.getPublicCoupons({
+      userId: req.auth.sub,
+      ...query,
+    });
+
+    return res.status(200).json({ coupons });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getAvailableCoupons = async (req, res, next) => {
+  try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+
+    const query = await usableCouponsQuerySchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const coupons = await couponService.getAvailableCoupons({
+      userId: req.auth.sub,
+      subtotal: query.subtotal ?? query.orderAmount ?? 0,
+      shippingFee: query.shippingFee,
+    });
+
+    return res.status(200).json({ coupons });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const validateCoupon = async (req, res, next) => {
+  try {
+    const payload = await validateCouponSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const result = await couponService.validateCoupon({
+      userId: req.auth?.sub || req.headers["x-user-id"] || req.body.userId,
+      code: payload.code,
+      orderAmount: payload.orderAmount ?? payload.subtotal,
+      shippingFee: payload.shippingFee,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const markCouponUsed = async (req, res, next) => {
+  try {
+    const payload = await markCouponUsedSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const result = await couponService.markCouponUsed(payload);
+
+    return res.status(200).json({ message: "Coupon usage recorded", ...result });
   } catch (error) {
     return next(error);
   }
@@ -102,6 +192,10 @@ module.exports = {
   disableCoupon,
   assignCoupon,
   getMyCoupons,
+  getPublicCoupons,
+  getAvailableCoupons,
+  validateCoupon,
+  markCouponUsed,
   listCoupons,
   assignBirthdayCoupon,
 };

@@ -3,6 +3,8 @@ const {
   addItemSchema,
   updateItemQuantitySchema,
   mergeCartSchema,
+  checkoutItemsSchema,
+  restoreCheckoutItemsSchema,
 } = require("../validators/cartValidator");
 
 const getCart = async (req, res, next) => {
@@ -117,6 +119,47 @@ const mergeCart = async (req, res, next) => {
   }
 };
 
+const checkoutSelectedItems = async (req, res, next) => {
+  try {
+    const payload = await checkoutItemsSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const result = await cartService.checkoutSelectedItems(payload);
+
+    return res.status(200).json({
+      message: "Checkout cart items locked and removed from active cart",
+      ...result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const restoreCheckoutItems = async (req, res, next) => {
+  try {
+    const payload = await restoreCheckoutItemsSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const result = await cartService.restoreCheckoutItems(payload);
+
+    return res.status(200).json({
+      message: result.alreadyRestored
+        ? "Cart already restored for this order"
+        : "Checkout cart items restored",
+      alreadyRestored: result.alreadyRestored,
+      cart: result.cart,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getCart,
   addItem,
@@ -125,4 +168,6 @@ module.exports = {
   clearCart,
   validateCart,
   mergeCart,
+  checkoutSelectedItems,
+  restoreCheckoutItems,
 };

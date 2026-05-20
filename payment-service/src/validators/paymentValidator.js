@@ -6,8 +6,18 @@ const uploadProofSchema = Joi.object({
   orderId: objectId.required(),
 });
 
+const initBankingPaymentSchema = Joi.object({
+  orderId: objectId.required(),
+  userId: objectId.required(),
+  amount: Joi.number().min(0).required(),
+});
+
 const idParamSchema = Joi.object({
   id: objectId.required(),
+});
+
+const orderIdParamSchema = Joi.object({
+  orderId: objectId.required(),
 });
 
 const rejectPaymentSchema = Joi.object({
@@ -21,7 +31,9 @@ const pagingQuerySchema = Joi.object({
 
 module.exports = {
   uploadProofSchema,
+  initBankingPaymentSchema,
   idParamSchema,
+  orderIdParamSchema,
   rejectPaymentSchema,
   pagingQuerySchema,
 };

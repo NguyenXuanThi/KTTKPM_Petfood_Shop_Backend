@@ -1,10 +1,32 @@
 const paymentService = require("../services/paymentService");
 const {
   uploadProofSchema,
+  initBankingPaymentSchema,
   idParamSchema,
+  orderIdParamSchema,
   rejectPaymentSchema,
   pagingQuerySchema,
 } = require("../validators/paymentValidator");
+
+const initBankingPayment = async (req, res, next) => {
+  try {
+    const payload = await initBankingPaymentSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const payment = await paymentService.initBankingPayment(payload);
+
+    return res.status(201).json({
+      success: true,
+      message: "Banking payment initialized",
+      payment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
 
 const uploadBankingProof = async (req, res, next) => {
   try {
@@ -22,7 +44,7 @@ const uploadBankingProof = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      message: "Payment proof uploaded successfully",
+      message: "Payment proof uploaded. Waiting for admin verification.",
       payment,
     });
   } catch (error) {
@@ -99,9 +121,53 @@ const rejectPayment = async (req, res, next) => {
   }
 };
 
+const failBankingPaymentByOrder = async (req, res, next) => {
+  try {
+    const { orderId } = await orderIdParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    const payment = await paymentService.failBankingPaymentByOrder({
+      orderId,
+      rejectedReason: req.body?.rejectedReason || "Order cancelled by user",
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Banking payment failed",
+      payment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const expireBankingPaymentByOrder = async (req, res, next) => {
+  try {
+    const { orderId } = await orderIdParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    const payment = await paymentService.expireBankingPaymentByOrder({ orderId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Banking payment expired",
+      payment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
+  initBankingPayment,
   uploadBankingProof,
   listPendingBankingPayments,
   approvePayment,
   rejectPayment,
+  failBankingPaymentByOrder,
+  expireBankingPaymentByOrder,
 };

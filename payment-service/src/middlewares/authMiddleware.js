@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { jwtSecret } = require("../config/env");
+const { jwtSecret, paymentInternalKey } = require("../config/env");
 
 const requireUserAuth = (req, res, next) => {
   const authorizationHeader = req.headers.authorization || "";
@@ -33,7 +33,21 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
+const requireInternal = (req, res, next) => {
+  const key = req.headers["x-internal-key"];
+
+  if (!key || key !== paymentInternalKey) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized internal request",
+    });
+  }
+
+  return next();
+};
+
 module.exports = {
   requireUserAuth,
   requireAdmin,
+  requireInternal,
 };

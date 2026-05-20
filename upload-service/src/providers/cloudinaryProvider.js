@@ -1,15 +1,11 @@
 const cloudinary = require("cloudinary").v2;
 const UploadProvider = require("./uploadProvider");
-const {
-  cloudinaryCloudName,
-  cloudinaryApiKey,
-  cloudinaryApiSecret,
-} = require("../config/env");
+require("../config/env");
 
 cloudinary.config({
-  cloud_name: cloudinaryCloudName,
-  api_key: cloudinaryApiKey,
-  api_secret: cloudinaryApiSecret,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 class CloudinaryProvider extends UploadProvider {
@@ -37,6 +33,7 @@ class CloudinaryProvider extends UploadProvider {
 
     return {
       url: result.secure_url,
+      publicId: result.public_id,
       provider: "cloudinary",
       key: result.public_id,
     };

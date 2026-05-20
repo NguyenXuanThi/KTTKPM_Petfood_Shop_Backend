@@ -2,6 +2,7 @@ const express = require("express");
 const userController = require("../controllers/userController");
 const wishlistController = require("../controllers/wishlistController");
 const addressController = require("../controllers/addressController");
+const statisticsController = require("../controllers/statisticsController");
 const { requireAuth, requireInternal } = require("../middlewares/authMiddleware");
 const { requireAdmin } = require("../middlewares/roleMiddleware");
 
@@ -47,6 +48,12 @@ router.get(
 );
 
 // Admin endpoints
+router.get(
+  "/admin/statistics/users",
+  requireAuth,
+  requireAdmin,
+  statisticsController.getUserStatistics,
+);
 router.get("/", requireAuth, requireAdmin, userController.listUsers);
 router.get("/search", requireAuth, requireAdmin, userController.searchUsers);
 router.patch(

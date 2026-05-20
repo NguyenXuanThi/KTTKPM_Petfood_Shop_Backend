@@ -31,6 +31,7 @@ app.use("/api/upload", uploadRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
+    success: false,
     message: "Route not found",
   });
 });
@@ -38,6 +39,7 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   if (error.isJoi) {
     return res.status(400).json({
+      success: false,
       message: "Validation failed",
       errors: error.details.map((item) => item.message),
     });
@@ -45,6 +47,7 @@ app.use((error, req, res, next) => {
 
   if (error && error.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({
+      success: false,
       message: "File too large. Max size is 5MB",
     });
   }
@@ -52,6 +55,7 @@ app.use((error, req, res, next) => {
   const statusCode = error.statusCode || 500;
 
   return res.status(statusCode).json({
+    success: false,
     message: error.message || "Internal server error",
   });
 });

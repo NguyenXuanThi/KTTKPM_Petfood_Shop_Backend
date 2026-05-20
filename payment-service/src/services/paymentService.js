@@ -42,6 +42,33 @@ const fetchOrderAsUser = async ({ orderId, accessToken }) => {
   }
 };
 
+const initBankingPayment = async ({ orderId, userId, amount }) => {
+  ensureObjectId(orderId, "Invalid order id");
+  ensureObjectId(userId, "Invalid user id");
+
+  const payment = await Payment.findOneAndUpdate(
+    { orderId },
+    {
+      $setOnInsert: {
+        orderId,
+        userId,
+        paymentMethod: "banking",
+        amount,
+        status: "pending",
+        proofImageUrl: null,
+        proofImagePublicId: null,
+        verifiedBy: null,
+        verifiedAt: null,
+        rejectedReason: "",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  return payment.toObject();
+};
+
 const syncOrderPaymentStatus = async ({ orderId, paymentStatus }) => {
   try {
     await axios.patch(
@@ -72,10 +99,9 @@ const uploadProofImage = async ({ file }) => {
     contentType: file.mimetype,
     knownLength: file.size,
   });
-  formData.append("type", "payment");
 
   try {
-    const { data } = await axios.post(`${uploadServiceUrl}/api/upload`, formData, {
+    const { data } = await axios.post(`${uploadServiceUrl}/api/upload/payment`, formData, {
       timeout: uploadServiceTimeoutMs,
       headers: formData.getHeaders(),
       maxBodyLength: Infinity,
@@ -101,14 +127,36 @@ const uploadBankingProof = async ({ userId, accessToken, orderId, file }) => {
     throw createError("proof image is required", 400);
   }
 
+  const payment = await Payment.findOne({ orderId });
+
+  if (!payment) {
+    throw createError("Banking payment record not found", 404);
+  }
+
+  if (payment.paymentMethod !== "banking") {
+    throw createError("Cannot upload proof for non-banking payment", 400);
+  }
+
+  if (payment.userId.toString() !== userId.toString()) {
+    throw createError("Only owner can upload payment proof", 403);
+  }
+
   const order = await fetchOrderAsUser({ orderId, accessToken });
 
   if (order.userId.toString() !== userId.toString()) {
-    throw createError("You do not have permission to upload proof for this order", 403);
+    throw createError("Only owner can upload payment proof", 403);
   }
 
   if (order.paymentMethod !== "banking") {
-    throw createError("Proof upload is only for banking orders", 400);
+    throw createError("Cannot upload proof for non-banking payment", 400);
+  }
+
+  if (order.orderStatus === "cancelled") {
+    throw createError("Cannot upload proof for cancelled order", 400);
+  }
+
+  if (payment.status === "expired" || order.paymentStatus === "expired") {
+    throw createError("Payment has expired", 400);
   }
 
   if (!["pending", "failed"].includes(order.paymentStatus)) {
@@ -117,22 +165,14 @@ const uploadBankingProof = async ({ userId, accessToken, orderId, file }) => {
 
   const uploaded = await uploadProofImage({ file });
 
-  const payment = await Payment.findOneAndUpdate(
-    { orderId },
-    {
-      orderId,
-      userId,
-      paymentMethod: "banking",
-      amount: order.totalAmount,
-      status: "waiting_verify",
-      proofImageUrl: uploaded.url,
-      proofImagePublicId: uploaded.key,
-      rejectedReason: "",
-      verifiedBy: null,
-      verifiedAt: null,
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  );
+  payment.amount = order.totalAmount;
+  payment.status = "waiting_verify";
+  payment.proofImageUrl = uploaded.url;
+  payment.proofImagePublicId = uploaded.publicId || uploaded.key;
+  payment.rejectedReason = "";
+  payment.verifiedBy = null;
+  payment.verifiedAt = null;
+  await payment.save();
 
   await syncOrderPaymentStatus({ orderId, paymentStatus: "waiting_verify" });
 
@@ -141,14 +181,18 @@ const uploadBankingProof = async ({ userId, accessToken, orderId, file }) => {
 
 const listPendingBankingPayments = async ({ page, limit }) => {
   const skip = (page - 1) * limit;
+  const filter = {
+    paymentMethod: "banking",
+    status: { $in: ["pending", "waiting_verify"] },
+  };
 
   const [payments, total] = await Promise.all([
-    Payment.find({ paymentMethod: "banking", status: "waiting_verify" })
+    Payment.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
-    Payment.countDocuments({ paymentMethod: "banking", status: "waiting_verify" }),
+    Payment.countDocuments(filter),
   ]);
 
   return {
@@ -218,9 +262,58 @@ const rejectPayment = async ({ paymentId, adminId, rejectedReason }) => {
   return payment.toObject();
 };
 
+const failBankingPaymentByOrder = async ({ orderId, rejectedReason = "Order cancelled by user" }) => {
+  ensureObjectId(orderId, "Invalid order id");
+
+  const payment = await Payment.findOne({ orderId });
+  if (!payment) {
+    throw createError("Banking payment record not found", 404);
+  }
+
+  if (payment.paymentMethod !== "banking") {
+    throw createError("Cannot fail non-banking payment here", 400);
+  }
+
+  if (payment.status === "paid") {
+    throw createError("Paid payment cannot be failed", 400);
+  }
+
+  payment.status = "failed";
+  payment.rejectedReason = rejectedReason;
+  await payment.save();
+
+  return payment.toObject();
+};
+
+const expireBankingPaymentByOrder = async ({ orderId }) => {
+  ensureObjectId(orderId, "Invalid order id");
+
+  const payment = await Payment.findOne({ orderId });
+  if (!payment) {
+    throw createError("Banking payment record not found", 404);
+  }
+
+  if (payment.paymentMethod !== "banking") {
+    throw createError("Cannot expire non-banking payment here", 400);
+  }
+
+  if (payment.status === "paid") {
+    throw createError("Paid payment cannot be expired", 400);
+  }
+
+  payment.status = "expired";
+  payment.rejectedReason = "Payment timeout";
+  await payment.save();
+
+  return payment.toObject();
+};
+
 module.exports = {
+  initBankingPayment,
   uploadBankingProof,
   listPendingBankingPayments,
   approvePayment,
   rejectPayment,
+  failBankingPaymentByOrder,
+  expireBankingPaymentByOrder,
 };

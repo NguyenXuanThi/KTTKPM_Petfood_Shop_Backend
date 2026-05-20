@@ -22,6 +22,15 @@ const findAll = ({ orderStatus, page, limit }) => {
   ]);
 };
 
+const findExpiredBankingCandidates = (now = new Date()) =>
+  Order.find({
+    paymentMethod: "banking",
+    orderStatus: "pending",
+    paymentStatus: { $in: ["pending", "waiting_verify"] },
+    expiresAt: { $ne: null, $lte: now },
+    cartRestoredAt: null,
+  }).sort({ expiresAt: 1 });
+
 module.exports = {
   create,
   findById,
@@ -29,4 +38,5 @@ module.exports = {
   findByUserId,
   findShippingByUserId,
   findAll,
+  findExpiredBankingCandidates,
 };

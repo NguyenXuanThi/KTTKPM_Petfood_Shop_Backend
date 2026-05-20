@@ -17,8 +17,8 @@ const createOrder = async (req, res, next) => {
       stripUnknown: true,
       convert: true,
     });
-    const order = await orderService.createOrder(req.auth.sub, payload);
-    return res.status(201).json({ success: true, order });
+    const result = await orderService.createOrder(req.auth.sub, payload);
+    return res.status(201).json({ success: true, ...result });
   } catch (error) {
     return next(error);
   }
@@ -147,6 +147,29 @@ const cancelOrder = async (req, res, next) => {
   }
 };
 
+const cancelMyBankingOrder = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params);
+    const payload = await cancelOrderSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+    const order = await orderService.cancelMyBankingOrder({
+      orderId: id,
+      userId: req.auth.sub,
+      reason: payload.reason || "",
+    });
+    return res.status(200).json({
+      success: true,
+      message: "Order cancelled and items restored to cart",
+      order,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const updateCodPaymentStatus = async (req, res, next) => {
   try {
     const { id } = await idParamSchema.validateAsync(req.params);
@@ -192,6 +215,7 @@ module.exports = {
   markDelivered,
   markCompleted,
   cancelOrder,
+  cancelMyBankingOrder,
   updateCodPaymentStatus,
   updatePaymentStatusInternal,
 };

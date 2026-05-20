@@ -47,6 +47,20 @@ const normalizeCartResponse = (cart) => ({
   updatedAt: cart.updatedAt,
 });
 
+const normalizeCheckoutItem = (item) => ({
+  productId: item.productId.toString(),
+  quantity: Number(item.quantity),
+  priceAtAdd: Number(item.priceAtAdd),
+  productName: item.productName,
+  imageUrl: item.imageUrl || "",
+  lastValidatedAt: item.lastValidatedAt,
+  flags: {
+    priceChanged: Boolean(item.flags?.priceChanged),
+    outOfStock: Boolean(item.flags?.outOfStock),
+    inactiveProduct: Boolean(item.flags?.inactiveProduct),
+  },
+});
+
 const findOrCreateCart = async (owner) => {
   const filter = buildOwnerFilter(owner);
   let cart = await Cart.findOne(filter);
@@ -279,6 +293,121 @@ const mergeGuestCart = async ({ userId, guestToken }) => {
   return normalizeCartResponse(userCart);
 };
 
+const checkoutSelectedItems = async ({ userId, productIds }) => {
+  ensureValidObjectId(userId, "Invalid user id");
+  productIds.forEach((productId) => ensureValidObjectId(productId));
+
+  const cart = await findOrCreateCart({ ownerType: "user", userId });
+  await syncCartWithProducts(cart);
+
+  const selectedIds = new Set(productIds.map((id) => id.toString()));
+  const selectedItems = cart.items.filter((item) =>
+    selectedIds.has(item.productId.toString())
+  );
+
+  if (selectedItems.length !== selectedIds.size) {
+    const foundIds = new Set(selectedItems.map((item) => item.productId.toString()));
+    const missingIds = [...selectedIds].filter((id) => !foundIds.has(id));
+    const error = new Error(`Selected cart items not found: ${missingIds.join(", ")}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const invalidItems = selectedItems.filter(
+    (item) =>
+      item.flags?.priceChanged ||
+      item.flags?.outOfStock ||
+      item.flags?.inactiveProduct
+  );
+
+  if (invalidItems.length > 0) {
+    const error = new Error("Selected cart items need attention before checkout");
+    error.statusCode = 409;
+    error.details = invalidItems.map((item) => ({
+      productId: item.productId.toString(),
+      flags: item.flags,
+    }));
+    throw error;
+  }
+
+  const checkoutItems = selectedItems.map(normalizeCheckoutItem);
+  cart.items = cart.items.filter((item) => !selectedIds.has(item.productId.toString()));
+  recalculateTotals(cart);
+  await cart.save();
+
+  return {
+    items: checkoutItems,
+    cart: normalizeCartResponse(cart),
+  };
+};
+
+const restoreCheckoutItems = async ({ userId, items, sourceOrderId }) => {
+  ensureValidObjectId(userId, "Invalid user id");
+  if (sourceOrderId) {
+    ensureValidObjectId(sourceOrderId, "Invalid source order id");
+  }
+  items.forEach((item) => ensureValidObjectId(item.productId));
+
+  const cart = await findOrCreateCart({ ownerType: "user", userId });
+  const restoredOrderIds = cart.restoredOrderIds || [];
+  const alreadyRestored =
+    sourceOrderId &&
+    restoredOrderIds.some((orderId) => orderId.toString() === sourceOrderId);
+
+  if (alreadyRestored) {
+    return {
+      alreadyRestored: true,
+      cart: normalizeCartResponse(cart),
+    };
+  }
+
+  for (const restoredItem of items) {
+    const priceAtAdd = Number(restoredItem.priceAtAdd ?? restoredItem.price);
+    const productName = restoredItem.productName || restoredItem.name;
+    const existedItem = cart.items.find(
+      (item) => item.productId.toString() === restoredItem.productId
+    );
+
+    if (existedItem) {
+      existedItem.quantity += restoredItem.quantity;
+      existedItem.priceAtAdd = priceAtAdd;
+      existedItem.productName = productName;
+      existedItem.imageUrl = restoredItem.imageUrl || "";
+      existedItem.lastValidatedAt = restoredItem.lastValidatedAt || null;
+      existedItem.flags = restoredItem.flags || {
+        priceChanged: false,
+        outOfStock: false,
+        inactiveProduct: false,
+      };
+    } else {
+      cart.items.push({
+        productId: restoredItem.productId,
+        quantity: restoredItem.quantity,
+        priceAtAdd,
+        productName,
+        imageUrl: restoredItem.imageUrl || "",
+        lastValidatedAt: restoredItem.lastValidatedAt || null,
+        flags: restoredItem.flags || {
+          priceChanged: false,
+          outOfStock: false,
+          inactiveProduct: false,
+        },
+      });
+    }
+  }
+
+  if (sourceOrderId) {
+    cart.restoredOrderIds.push(toObjectId(sourceOrderId));
+  }
+  recalculateTotals(cart);
+  await cart.save();
+
+  return {
+    alreadyRestored: false,
+    cart: normalizeCartResponse(cart),
+  };
+};
+
 module.exports = {
   getCart,
   addItem,
@@ -287,4 +416,6 @@ module.exports = {
   clearCart,
   validateCart,
   mergeGuestCart,
+  checkoutSelectedItems,
+  restoreCheckoutItems,
 };

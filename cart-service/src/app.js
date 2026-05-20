@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
 const cartRoutes = require("./routes/cartRoutes");
+const cartInternalRoutes = require("./routes/cartInternalRoutes");
 const { corsOrigin } = require("./config/env");
 
 const app = express();
@@ -26,6 +27,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.use("/internal/cart", cartInternalRoutes);
 app.use("/api/cart", cartRoutes);
 
 app.use((req, res) => {
@@ -46,6 +48,7 @@ app.use((error, req, res, next) => {
 
   return res.status(statusCode).json({
     message: error.message || "Internal server error",
+    ...(error.details ? { details: error.details } : {}),
   });
 });
 

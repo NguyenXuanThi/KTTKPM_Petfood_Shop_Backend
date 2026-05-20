@@ -72,6 +72,22 @@ const couponSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    perUserLimit: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    appliesTo: {
+      type: String,
+      enum: ["order", "shipping"],
+      default: "order",
+      index: true,
+    },
+    maxDiscountAmount: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,

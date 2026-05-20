@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const PAYMENT_METHODS = ["cash", "banking"];
-const PAYMENT_STATUSES = ["unpaid", "pending", "waiting_verify", "paid", "failed"];
+const PAYMENT_STATUSES = ["unpaid", "pending", "waiting_verify", "paid", "failed", "expired"];
 
 const paymentSchema = new mongoose.Schema(
   {
@@ -34,11 +34,11 @@ const paymentSchema = new mongoose.Schema(
     },
     proofImageUrl: {
       type: String,
-      default: "",
+      default: null,
     },
     proofImagePublicId: {
       type: String,
-      default: "",
+      default: null,
     },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -53,6 +53,11 @@ const paymentSchema = new mongoose.Schema(
       default: "",
       trim: true,
       maxlength: 500,
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
   },
   { timestamps: true },

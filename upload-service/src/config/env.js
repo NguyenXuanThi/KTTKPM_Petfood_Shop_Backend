@@ -2,7 +2,7 @@ const path = require("path");
 const dotenv = require("dotenv");
 
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env"), override: true });
 
 const requiredEnvVars = [
   "AWS_REGION",
@@ -17,6 +17,25 @@ const requiredEnvVars = [
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
+const cloudinaryEnvVars = [
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET",
+];
+
+for (const envVar of cloudinaryEnvVars) {
+  const value = process.env[envVar];
+  const isPlaceholder =
+    value.startsWith("your_") ||
+    (value.startsWith("<") && value.endsWith(">"));
+
+  if (isPlaceholder) {
+    throw new Error(
+      "Cloudinary credentials are missing or invalid. Please update .env",
+    );
   }
 }
 

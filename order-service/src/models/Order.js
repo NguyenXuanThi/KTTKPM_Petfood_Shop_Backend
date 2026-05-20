@@ -16,6 +16,7 @@ const PAYMENT_STATUSES = [
   "waiting_verify",
   "paid",
   "failed",
+  "expired",
 ];
 
 const orderItemSchema = new mongoose.Schema(
@@ -80,6 +81,37 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    shippingFee: {
+      type: Number,
+      default: 30000,
+      min: 0,
+    },
+    shippingDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    couponCode: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+    couponDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    couponShippingDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     paymentMethod: {
       type: String,
       enum: PAYMENT_METHODS,
@@ -126,6 +158,27 @@ const orderSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    cancelledReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 500,
+    },
+    cartRestoredAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     notes: {
       type: String,
       default: "",
@@ -138,6 +191,13 @@ const orderSchema = new mongoose.Schema(
 
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ orderStatus: 1, createdAt: -1 });
+orderSchema.index({
+  paymentMethod: 1,
+  orderStatus: 1,
+  paymentStatus: 1,
+  expiresAt: 1,
+  cartRestoredAt: 1,
+});
 
 module.exports = {
   Order: mongoose.model("Order", orderSchema),

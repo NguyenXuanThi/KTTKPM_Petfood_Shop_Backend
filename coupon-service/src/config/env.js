@@ -7,6 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 const requiredEnvVars = [
   "COUPON_MONGODB_URI",
   "JWT_SECRET",
+  "COUPON_INTERNAL_KEY",
   "USER_SERVICE_URL",
   "NOTIFICATION_SERVICE_URL",
 ];
@@ -23,6 +24,7 @@ module.exports = {
   mongoUri: process.env.COUPON_MONGODB_URI,
   corsOrigin: process.env.COUPON_CORS_ORIGIN || "*",
   jwtSecret: process.env.JWT_SECRET,
+  internalKey: process.env.COUPON_INTERNAL_KEY,
   userServiceUrl: process.env.USER_SERVICE_URL,
   userServiceTimeoutMs: Number(process.env.COUPON_USER_SERVICE_TIMEOUT_MS || 5000),
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,

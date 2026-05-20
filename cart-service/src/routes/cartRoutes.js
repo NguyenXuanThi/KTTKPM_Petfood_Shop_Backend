@@ -1,9 +1,24 @@
 const express = require("express");
 const cartController = require("../controllers/cartController");
-const { optionalAuth, requireUserAuth } = require("../middlewares/authMiddleware");
+const {
+  optionalAuth,
+  requireUserAuth,
+  requireInternal,
+} = require("../middlewares/authMiddleware");
 const { resolveCartOwner } = require("../middlewares/cartOwnerMiddleware");
 
 const router = express.Router();
+
+router.post(
+  "/internal/checkout-items",
+  requireInternal,
+  cartController.checkoutSelectedItems,
+);
+router.post(
+  "/internal/restore-items",
+  requireInternal,
+  cartController.restoreCheckoutItems,
+);
 
 router.use(optionalAuth);
 

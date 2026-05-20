@@ -4,7 +4,12 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-const requiredEnvVars = ["CART_MONGODB_URI", "PRODUCT_SERVICE_URL", "JWT_SECRET"];
+const requiredEnvVars = [
+  "CART_MONGODB_URI",
+  "PRODUCT_SERVICE_URL",
+  "JWT_SECRET",
+  "CART_INTERNAL_KEY",
+];
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
@@ -19,5 +24,6 @@ module.exports = {
   corsOrigin: process.env.CART_CORS_ORIGIN || "*",
   productServiceUrl: process.env.PRODUCT_SERVICE_URL,
   jwtSecret: process.env.JWT_SECRET,
+  internalKey: process.env.CART_INTERNAL_KEY,
   productServiceTimeoutMs: Number(process.env.CART_PRODUCT_TIMEOUT_MS || 5000),
 };
