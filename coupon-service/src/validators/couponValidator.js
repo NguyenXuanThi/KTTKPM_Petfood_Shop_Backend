@@ -42,6 +42,7 @@ const markCouponUsedSchema = Joi.object({
   orderId: Joi.string().hex().length(24).required(),
   orderAmount: Joi.number().min(0).required(),
   shippingFee: Joi.number().min(0).default(0),
+  discountAmount: Joi.number().min(0).default(0),
 });
 
 module.exports = {

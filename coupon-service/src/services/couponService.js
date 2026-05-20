@@ -383,7 +383,7 @@ const getPublicCoupons = async ({ userId, orderAmount = 0, shippingFee = 0 }) =>
 const validateCoupon = async ({ userId, code, orderAmount, shippingFee }) =>
   validateCouponForUser({ userId, code, orderAmount, shippingFee });
 
-const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee }) => {
+const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee, discountAmount = 0 }) => {
   const coupon = await Coupon.findOne({ code: code.toUpperCase() });
   if (!coupon) throw createError("Coupon not found", 404);
 
@@ -414,6 +414,7 @@ const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee 
     status: "used",
     usedAt: new Date(),
     orderId,
+    discountAmount,
   };
   if (coupon.scope === "global") {
     usagePayload.assignedBy = "system";

@@ -342,13 +342,27 @@ const validateCouponForOrder = async ({ userId, couponCode, orderAmount, shippin
   }
 };
 
-const markCouponUsed = async ({ userId, couponCode, orderId, orderAmount, shippingFee }) => {
+const markCouponUsed = async ({
+  userId,
+  couponCode,
+  orderId,
+  orderAmount,
+  shippingFee,
+  discountAmount = 0,
+}) => {
   if (!couponCode) return;
 
   try {
     await axios.post(
       `${couponServiceUrl}/api/coupons/internal/mark-used`,
-      { userId, code: couponCode, orderId, orderAmount, shippingFee },
+      {
+        userId,
+        code: couponCode,
+        orderId,
+        orderAmount,
+        shippingFee,
+        discountAmount,
+      },
       {
         timeout: couponServiceTimeoutMs,
         headers: {
@@ -392,6 +406,10 @@ const createOrder = async (userId, payload) => {
     autoShippingDiscount + couponResult.couponShippingDiscount,
   );
   const couponDiscount = couponResult.couponDiscount;
+  const couponShippingDiscount = Math.min(
+    Math.max(0, shippingFee - autoShippingDiscount),
+    couponResult.couponShippingDiscount,
+  );
   const totalAmount = Math.max(0, subtotal + shippingFee - shippingDiscount - couponDiscount);
   const paymentStatus = payload.paymentMethod === "cash" ? "unpaid" : "pending";
   let order;
@@ -405,6 +423,7 @@ const createOrder = async (userId, payload) => {
       shippingDiscount,
       couponCode: couponResult.couponCode,
       couponDiscount,
+      couponShippingDiscount,
       totalAmount,
       paymentMethod: payload.paymentMethod,
       paymentStatus,
@@ -436,6 +455,7 @@ const createOrder = async (userId, payload) => {
       orderId: order._id.toString(),
       orderAmount: subtotal,
       shippingFee: Math.max(0, shippingFee - autoShippingDiscount),
+      discountAmount: couponDiscount + couponShippingDiscount,
     });
 
     return {
@@ -602,6 +622,7 @@ const updateCodPaymentStatus = async (orderId, paymentStatus) => {
   }
 
   order.paymentStatus = "paid";
+  order.paidAt = new Date();
   await order.save();
 
   if (order.couponCode) {
@@ -613,6 +634,7 @@ const updateCodPaymentStatus = async (orderId, paymentStatus) => {
       orderId: order._id.toString(),
       orderAmount: order.subtotal,
       shippingFee: Math.max(0, order.shippingFee - autoShippingDiscount),
+      discountAmount: order.couponDiscount + (order.couponShippingDiscount || 0),
     });
   }
 
@@ -724,6 +746,9 @@ const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
   }
 
   order.paymentStatus = paymentStatus;
+  if (paymentStatus === "paid") {
+    order.paidAt = order.paidAt || new Date();
+  }
   await order.save();
 
   if (paymentStatus === "paid" && order.couponCode) {
@@ -735,6 +760,7 @@ const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
       orderId: order._id.toString(),
       orderAmount: order.subtotal,
       shippingFee: Math.max(0, order.shippingFee - autoShippingDiscount),
+      discountAmount: order.couponDiscount + (order.couponShippingDiscount || 0),
     });
   }
 

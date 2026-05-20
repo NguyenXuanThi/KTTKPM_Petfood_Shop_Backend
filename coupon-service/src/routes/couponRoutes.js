@@ -1,5 +1,6 @@
 const express = require("express");
 const couponController = require("../controllers/couponController");
+const statisticsController = require("../controllers/statisticsController");
 const {
   requireUserAuth,
   requireAdmin,
@@ -9,6 +10,12 @@ const {
 const router = express.Router();
 
 // Admin routes
+router.get(
+  "/admin/statistics/coupons",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getCouponStatistics,
+);
 router.get("/", requireUserAuth, requireAdmin, couponController.listCoupons);
 router.post("/", requireUserAuth, requireAdmin, couponController.createCoupon);
 router.patch("/:id/disable", requireUserAuth, requireAdmin, couponController.disableCoupon);

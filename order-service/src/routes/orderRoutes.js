@@ -1,5 +1,6 @@
 const express = require("express");
 const orderController = require("../controllers/orderController");
+const statisticsController = require("../controllers/statisticsController");
 const {
   requireUserAuth,
   requireAdmin,
@@ -29,6 +30,30 @@ router.patch(
 );
 
 // Admin APIs
+router.get(
+  "/admin/statistics/revenue",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getRevenueStatistics,
+);
+router.get(
+  "/admin/statistics/orders",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getOrderStatistics,
+);
+router.get(
+  "/admin/statistics/products",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getProductStatistics,
+);
+router.get(
+  "/admin/statistics/dashboard",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getDashboardStatistics,
+);
 router.get("/admin/orders", requireUserAuth, requireAdmin, orderController.listAdminOrders);
 router.get(
   "/admin/orders/pending",

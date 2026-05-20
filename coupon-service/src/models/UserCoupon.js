@@ -44,6 +44,11 @@ const userCouponSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       default: null,
     },
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // For email notification tracking
     notifiedAt: {
       type: Date,

@@ -107,6 +107,11 @@ const orderSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    couponShippingDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     paymentMethod: {
       type: String,
       enum: PAYMENT_METHODS,
@@ -165,6 +170,11 @@ const orderSchema = new mongoose.Schema(
       maxlength: 500,
     },
     cartRestoredAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    paidAt: {
       type: Date,
       default: null,
       index: true,

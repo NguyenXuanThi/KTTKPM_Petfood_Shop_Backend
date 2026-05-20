@@ -22,6 +22,7 @@ const paymentProxy = require("./routes/paymentProxy");
 const notificationProxy = require("./routes/notificationProxy");
 const adminOrderProxy = require("./routes/adminOrderProxy");
 const adminPaymentProxy = require("./routes/adminPaymentProxy");
+const statisticsProxy = require("./routes/statisticsProxy");
 
 const app = express();
 
@@ -132,6 +133,7 @@ app.use("/api/uploads", requireAuth, uploadProxy);
 
 app.use("/api/coupons", requireAuthForCouponRoutes, requireAdminForCouponManagement, couponProxy);
 
+app.use("/api/admin/statistics", requireAuth, requireAdmin, statisticsProxy);
 app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
 app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);

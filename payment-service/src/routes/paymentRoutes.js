@@ -1,5 +1,6 @@
 const express = require("express");
 const paymentController = require("../controllers/paymentController");
+const statisticsController = require("../controllers/statisticsController");
 const {
   requireUserAuth,
   requireAdmin,
@@ -8,6 +9,13 @@ const {
 const { upload } = require("../middlewares/uploadMiddleware");
 
 const router = express.Router();
+
+router.get(
+  "/admin/statistics/payments",
+  requireUserAuth,
+  requireAdmin,
+  statisticsController.getPaymentStatistics,
+);
 
 router.post(
   "/payments/banking/init",
