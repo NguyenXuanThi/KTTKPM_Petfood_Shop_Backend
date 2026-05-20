@@ -1,6 +1,7 @@
 const express = require("express");
 const paymentController = require("../controllers/paymentController");
 const statisticsController = require("../controllers/statisticsController");
+const vnpayController = require("../controllers/vnpayController");
 const {
   requireUserAuth,
   requireAdmin,

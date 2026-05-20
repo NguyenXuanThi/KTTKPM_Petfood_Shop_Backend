@@ -23,6 +23,8 @@ const notificationProxy = require("./routes/notificationProxy");
 const adminOrderProxy = require("./routes/adminOrderProxy");
 const adminPaymentProxy = require("./routes/adminPaymentProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
+const aiProxy = require("./routes/aiProxy");
+const chatProxy = require("./routes/chatProxy");
 
 const app = express();
 
