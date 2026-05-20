@@ -18,15 +18,9 @@ const io = new Server(server, {
     credentials: true
   }
 });
-
-// Socket.IO connection handling (will be implemented later)
-io.on('connection', (socket) => {
-  console.log('✅ Client connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('❌ Client disconnected:', socket.id);
-  });
-});
+// Socket.IO connection handling - live chat
+const setupLiveSocket = require('./sockets/liveSocket');
+setupLiveSocket(io);
 
 // Start server
 const PORT = config.PORT;
@@ -36,11 +30,32 @@ server.listen(PORT, () => {
   console.log(`🌍 Environment: ${config.NODE_ENV}`);
 });
 
+// Handle listen errors (e.g., port already in use)
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Please free the port or set a different PORT.`);
+    process.exit(1);
+  }
+  console.error('Server error:', err);
+});
+
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    console.log('HTTP server closed');
-    process.exit(0);
-  });
+function shutdown(signal) {
+  console.log(`${signal} signal received: closing HTTP server`);
+  try {
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+  } catch (err) {
+    console.error('Error during shutdown', err);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
 });

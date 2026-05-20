@@ -12,7 +12,7 @@ const orderItemSchema = Joi.object({
 
 const createOrderSchema = Joi.object({
   items: Joi.array().items(orderItemSchema).min(1).required(),
-  paymentMethod: Joi.string().valid("cash", "banking").required(),
+  paymentMethod: Joi.string().valid("cash", "banking", "vnpay").required(),
   addressId: objectId.required(),
   notes: Joi.string().trim().max(1000).allow("").optional(),
 });

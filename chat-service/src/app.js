@@ -27,8 +27,12 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Routes will be added here
-// app.use('/api/chat', chatRoutes);
+// Routes
+const chatRoutes = require('./routes/chatRoutes');
+const liveRoutes = require('./routes/liveRoutes');
+
+app.use('/api/chat', chatRoutes);
+app.use('/api/live', liveRoutes);
 
 // 404 handler
 app.use((req, res) => {
