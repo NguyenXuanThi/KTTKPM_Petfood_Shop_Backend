@@ -15,6 +15,7 @@ const requiredEnvVars = [
   "ORDER_SERVICE_URL",
   "PAYMENT_SERVICE_URL",
   "NOTIFICATION_SERVICE_URL",
+  "REVIEW_SERVICE_URL",
   "JWT_SECRET",
 ];
 
@@ -40,6 +41,7 @@ module.exports = {
   orderServiceUrl: process.env.ORDER_SERVICE_URL,
   paymentServiceUrl: process.env.PAYMENT_SERVICE_URL,
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
+  reviewServiceUrl: process.env.REVIEW_SERVICE_URL,
   aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
   chatServiceUrl: process.env.CHAT_SERVICE_URL || "http://localhost:3012", // User-Admin chat
 

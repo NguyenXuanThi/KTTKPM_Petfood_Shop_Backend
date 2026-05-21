@@ -22,6 +22,8 @@ module.exports = {
   mongoUri: process.env.PRODUCT_MONGODB_URI,
   corsOrigin: process.env.PRODUCT_CORS_ORIGIN || "*",
   jwtSecret: process.env.JWT_SECRET || "petfood_secret_key",
+  internalKey:
+    process.env.PRODUCT_INTERNAL_KEY || process.env.ORDER_INTERNAL_KEY || "petfood_internal_key",
   categoryServiceUrl: process.env.CATEGORY_SERVICE_URL,
   categoryServiceTimeoutMs: Number(
     process.env.PRODUCT_CATEGORY_TIMEOUT_MS || 5000,
