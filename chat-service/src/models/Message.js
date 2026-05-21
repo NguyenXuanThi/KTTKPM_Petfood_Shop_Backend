@@ -21,7 +21,7 @@ const messageSchema = new mongoose.Schema({
   },
   senderRole: {
     type: String,
-    enum: ['customer', 'admin'],
+    enum: ['customer', 'admin', 'support'],
     required: true
   },
   // message can be text or empty for non-text message types

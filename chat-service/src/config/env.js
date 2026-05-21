@@ -7,5 +7,7 @@ module.exports = {
   MONGODB_URI: process.env.CHAT_MONGODB_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/petfood_chat',
   JWT_SECRET: process.env.JWT_SECRET || 'petfood_chat_secret',
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  NODE_ENV: process.env.NODE_ENV || 'development'
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  // User service URL for fetching support users
+  USER_SERVICE_URL: process.env.USER_SERVICE_URL || 'http://localhost:3001'
 };

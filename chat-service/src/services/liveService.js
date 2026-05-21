@@ -1,20 +1,41 @@
 const LiveConversation = require('../models/LiveConversation');
 const Message = require('../models/Message');
+const { getRandomSupportUser } = require('../utils/userClient');
 
 class LiveService {
   async getOrCreateConversation(customerId, customerName = '', customerAvatar = '') {
     try {
       let conv = await LiveConversation.findOne({ customerId });
+      
       if (!conv) {
-        conv = new LiveConversation({ customerId, customerName, customerAvatar, participants: [customerId] });
+        // Get support user to assign to new conversation
+        const supportResult = await getRandomSupportUser();
+        const supportId = supportResult.success ? supportResult.data.id : null;
+        const supportName = supportResult.success ? supportResult.data.fullName : '';
+
+        conv = new LiveConversation({ 
+          customerId, 
+          customerName, 
+          customerAvatar, 
+          participants: [customerId],
+          supportId,
+          supportName
+        });
         await conv.save();
       } else {
-        // update display info if provided
+        // Update display info if provided
         let changed = false;
-        if (customerName && conv.customerName !== customerName) { conv.customerName = customerName; changed = true; }
-        if (customerAvatar && conv.customerAvatar !== customerAvatar) { conv.customerAvatar = customerAvatar; changed = true; }
+        if (customerName && conv.customerName !== customerName) { 
+          conv.customerName = customerName; 
+          changed = true; 
+        }
+        if (customerAvatar && conv.customerAvatar !== customerAvatar) { 
+          conv.customerAvatar = customerAvatar; 
+          changed = true; 
+        }
         if (changed) await conv.save();
       }
+      
       return { success: true, data: conv };
     } catch (error) {
       console.error('getOrCreateConversation error:', error.message);
@@ -22,7 +43,8 @@ class LiveService {
     }
   }
 
-  async getConversationsForAdmin(limit = 50) {
+  // Get all conversations (for support staff and admins)
+  async getConversations(limit = 50) {
     try {
       const convs = await LiveConversation.find()
         .sort({ lastMessageAt: -1, updatedAt: -1 })
@@ -30,9 +52,36 @@ class LiveService {
         .lean();
       return { success: true, data: convs };
     } catch (error) {
-      console.error('getConversationsForAdmin error:', error.message);
+      console.error('getConversations error:', error.message);
       return { success: false, error: error.message };
     }
+  }
+
+  // Get conversations assigned to specific support user
+  async getConversationsForSupport(supportId, limit = 50) {
+    try {
+      // Find conversations assigned to this support user
+      // Also include conversations with no support assigned (to be claimed)
+      const convs = await LiveConversation.find({
+        $or: [
+          { supportId },
+          { supportId: null }
+        ]
+      })
+        .sort({ lastMessageAt: -1, updatedAt: -1 })
+        .limit(limit)
+        .lean();
+      
+      return { success: true, data: convs };
+    } catch (error) {
+      console.error('getConversationsForSupport error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Backward compatibility: get conversations for admin (all conversations)
+  async getConversationsForAdmin(limit = 50) {
+    return this.getConversations(limit);
   }
 
   async getConversationById(conversationId) {
@@ -60,8 +109,13 @@ class LiveService {
 
   async addMessage(conversationId, senderId, senderRole, messageText = '', senderName = '', senderAvatar = '', options = {}) {
     try {
+      console.log(`[addMessage] Processing message from ${senderName} (${senderRole}):`, { conversationId, senderId, messageText: messageText?.substring(0, 50) });
+      
       const conv = await LiveConversation.findById(conversationId);
-      if (!conv) return { success: false, error: 'Conversation not found' };
+      if (!conv) {
+        console.error(`[addMessage] Conversation not found: ${conversationId}`);
+        return { success: false, error: 'Conversation not found' };
+      }
 
       const { messageType = 'text', fileUrl = '', metadata = {}, productId = '', productData = {} } = options;
 
@@ -80,6 +134,8 @@ class LiveService {
       });
 
       await msg.save();
+      console.log(`[addMessage] Message saved successfully:`, msg._id);
+      
       // update conversation preview
       if (messageType === 'image') {
         conv.lastMessage = '[Hình ảnh]';
@@ -91,10 +147,11 @@ class LiveService {
       conv.lastMessageAt = msg.createdAt;
       if (!conv.participants.includes(senderId)) conv.participants.push(senderId);
       await conv.save();
+      console.log(`[addMessage] Conversation updated:`, conversationId);
 
       return { success: true, data: msg, conversation: conv };
     } catch (error) {
-      console.error('addMessage error:', error.message);
+      console.error('[addMessage] Error:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -105,6 +162,48 @@ class LiveService {
       return { success: true };
     } catch (error) {
       console.error('markAsRead error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Assign conversation to support user
+  async assignConversationToSupport(conversationId, supportId, supportName = '') {
+    try {
+      const conv = await LiveConversation.findByIdAndUpdate(
+        conversationId,
+        { 
+          supportId, 
+          supportName,
+          updatedAt: new Date()
+        },
+        { new: true }
+      );
+      
+      if (!conv) return { success: false, error: 'Conversation not found' };
+      return { success: true, data: conv };
+    } catch (error) {
+      console.error('assignConversationToSupport error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Get conversation participants (for socket room management)
+  async getConversationParticipants(conversationId) {
+    try {
+      const conv = await LiveConversation.findById(conversationId);
+      if (!conv) return { success: false, error: 'Conversation not found' };
+      
+      const participants = {
+        customerId: conv.customerId,
+        supportId: conv.supportId,
+        // Backward compatibility
+        adminId: conv.adminId,
+        allParticipantIds: [...new Set([conv.customerId, conv.supportId, conv.adminId].filter(Boolean))]
+      };
+      
+      return { success: true, data: participants };
+    } catch (error) {
+      console.error('getConversationParticipants error:', error.message);
       return { success: false, error: error.message };
     }
   }

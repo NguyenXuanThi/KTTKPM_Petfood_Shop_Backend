@@ -18,6 +18,17 @@ const liveConversationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Support staff handling conversation (primary)
+  supportId: {
+    type: String,
+    default: null,
+    index: true
+  },
+  supportName: {
+    type: String,
+    default: ''
+  },
+  // Backward compatibility: keep adminId for old conversations
   adminId: {
     type: String,
     default: null,
