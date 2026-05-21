@@ -31,8 +31,14 @@ const listProductSchema = Joi.object({
   sortOrder: Joi.string().valid("asc", "desc").default("desc"),
 });
 
+const ratingSummarySchema = Joi.object({
+  averageRating: Joi.number().min(0).max(5).required(),
+  reviewCount: Joi.number().integer().min(0).required(),
+});
+
 module.exports = {
   createProductSchema,
   updateProductSchema,
   listProductSchema,
+  ratingSummarySchema,
 };

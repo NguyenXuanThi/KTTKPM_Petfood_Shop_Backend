@@ -3,6 +3,7 @@ const {
   createProductSchema,
   updateProductSchema,
   listProductSchema,
+  ratingSummarySchema,
 } = require("../validators/productValidator");
 
 const createProduct = async (req, res, next) => {
@@ -98,10 +99,31 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
+const updateRatingSummaryInternal = async (req, res, next) => {
+  try {
+    const payload = await ratingSummarySchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const product = await productService.updateRatingSummary(req.params.id, payload);
+
+    return res.status(200).json({
+      success: true,
+      message: "Rating summary updated",
+      product,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createProduct,
   listProducts,
   getProductDetail,
   updateProduct,
   deleteProduct,
+  updateRatingSummaryInternal,
 };

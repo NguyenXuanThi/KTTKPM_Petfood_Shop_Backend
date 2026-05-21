@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
 const Product = require("../models/Product");
-const reviewService = require("./reviewService");
 const { uploadProductImage, deleteProductImage } = require("./uploadClient");
 const { ensureActiveCategory } = require("./categoryClient");
 
@@ -120,10 +119,7 @@ const listProducts = async ({
 const getProductDetail = async (productId) => {
   ensureObjectId(productId);
 
-  const [product, reviewSummary] = await Promise.all([
-    Product.findById(productId),
-    reviewService.getVisibleReviewSummary(productId),
-  ]);
+  const product = await Product.findById(productId);
 
   if (!product) {
     const error = new Error("Product not found");
@@ -133,9 +129,7 @@ const getProductDetail = async (productId) => {
 
   return {
     ...product.toObject(),
-    averageRating: reviewSummary.averageRating,
-    rating: reviewSummary.averageRating,
-    reviewCount: reviewSummary.totalReviews,
+    rating: product.averageRating || 0,
   };
 };
 
@@ -218,11 +212,31 @@ const deleteProduct = async (productId) => {
   }
 
   await Product.deleteOne({ _id: productId });
-  await reviewService.deleteReviewsByProductId(productId);
   await deleteProductImage({
     provider: product.imageProvider || "s3",
     key: product.imageKey,
   }).catch(() => null);
+
+  return product;
+};
+
+const updateRatingSummary = async (productId, payload) => {
+  ensureObjectId(productId);
+
+  const product = await Product.findByIdAndUpdate(
+    productId,
+    {
+      averageRating: payload.averageRating,
+      reviewCount: payload.reviewCount,
+    },
+    { new: true, runValidators: true },
+  );
+
+  if (!product) {
+    const error = new Error("Product not found");
+    error.statusCode = 404;
+    throw error;
+  }
 
   return product;
 };
@@ -233,4 +247,5 @@ module.exports = {
   getProductDetail,
   updateProduct,
   deleteProduct,
+  updateRatingSummary,
 };

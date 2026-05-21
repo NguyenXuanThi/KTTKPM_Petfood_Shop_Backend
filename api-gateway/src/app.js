@@ -8,7 +8,10 @@ const { corsOrigin, rateLimitWindowMs, rateLimitMax } = require("./config/env");
 const { loggerMiddleware } = require("./middlewares/loggerMiddleware");
 const { requireAuth } = require("./middlewares/authMiddleware");
 const { requireAdmin } = require("./middlewares/adminMiddleware");
-const { notFoundHandler, errorHandler } = require("./middlewares/errorMiddleware");
+const {
+  notFoundHandler,
+  errorHandler,
+} = require("./middlewares/errorMiddleware");
 
 const authProxy = require("./routes/authProxy");
 const userProxy = require("./routes/userProxy");
@@ -22,7 +25,12 @@ const paymentProxy = require("./routes/paymentProxy");
 const notificationProxy = require("./routes/notificationProxy");
 const adminOrderProxy = require("./routes/adminOrderProxy");
 const adminPaymentProxy = require("./routes/adminPaymentProxy");
+const reviewProxy = require("./routes/reviewProxy");
+const adminReviewProxy = require("./routes/adminReviewProxy");
+const productReviewProxy = require("./routes/productReviewProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
+// const aiProxy = require("./routes/aiProxy");
+// const chatProxy = require("./routes/chatProxy");
 
 const app = express();
 
@@ -32,7 +40,12 @@ app.use(
     origin: corsOrigin === "*" ? true : corsOrigin,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-internal-key", "x-cart-token"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-internal-key",
+      "x-cart-token",
+    ],
   }),
 );
 app.use(compression());
@@ -113,8 +126,11 @@ app.get("/api/health", (req, res) => {
       orders: "/api/orders/*",
       payments: "/api/payments/*",
       notifications: "/api/notifications/*",
+      reviews: "/api/reviews/*",
+      productReviews: "/api/products/:productId/reviews",
       adminOrders: "/api/admin/orders/*",
       adminPayments: "/api/admin/payments/*",
+      adminReviews: "/api/admin/reviews/*",
     },
   });
 });
@@ -122,6 +138,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api", apiLimiter);
 
 app.use("/api/auth", authProxy);
+app.use("/api/products/:productId/reviews", productReviewProxy);
 app.use("/api/products", requireAdminOnWriteMethods, productProxy);
 app.use("/api/categories", requireAdminOnWriteMethods, categoryProxy);
 app.use("/api/cart", cartProxy);
@@ -130,12 +147,19 @@ app.use("/api/users", requireAuth, userProxy);
 app.use("/api/orders", requireAuth, orderProxy);
 app.use("/api/payments", requireAuth, paymentProxy);
 app.use("/api/uploads", requireAuth, uploadProxy);
+app.use("/api/reviews", requireAuth, reviewProxy);
 
-app.use("/api/coupons", requireAuthForCouponRoutes, requireAdminForCouponManagement, couponProxy);
+app.use(
+  "/api/coupons",
+  requireAuthForCouponRoutes,
+  requireAdminForCouponManagement,
+  couponProxy,
+);
 
 app.use("/api/admin/statistics", requireAuth, requireAdmin, statisticsProxy);
 app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
 app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
+app.use("/api/admin/reviews", requireAuth, requireAdmin, adminReviewProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
 
 app.use(notFoundHandler);
