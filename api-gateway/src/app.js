@@ -29,8 +29,9 @@ const reviewProxy = require("./routes/reviewProxy");
 const adminReviewProxy = require("./routes/adminReviewProxy");
 const productReviewProxy = require("./routes/productReviewProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
-// const aiProxy = require("./routes/aiProxy");
-// const chatProxy = require("./routes/chatProxy");
+const aiProxy = require("./routes/aiProxy");
+const chatProxy = require("./routes/chatProxy");
+const appointmentProxy = require("./routes/appointmentProxy");
 
 const app = express();
 
@@ -167,6 +168,7 @@ app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
 // AI and Chat services (public access for AI chatbot, auth for user-admin chat)
 app.use("/api/ai", aiProxy);
 app.use("/api/chat", requireAuth, chatProxy);
+app.use("/api/appointments", appointmentProxy);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
