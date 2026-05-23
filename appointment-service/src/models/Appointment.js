@@ -19,6 +19,9 @@ const AppointmentSchema = new mongoose.Schema(
 
     note: { type: String, default: '' },
 
+    // allow pinning important appointments in admin UI
+    isPinned: { type: Boolean, default: false, index: true },
+
     status: {
       type: String,
       enum: ['pending_confirmation', 'confirmed', 'waiting_customer', 'completed'],

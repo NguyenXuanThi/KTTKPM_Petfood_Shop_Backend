@@ -12,7 +12,14 @@ function createApp() {
   app.use(morgan('dev'));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
-  app.use(cors({ origin: process.env.APPOINTMENT_CORS_ORIGIN || '*' }));
+  // Only enable CORS with a specific origin. Do NOT expose wildcard '*' when
+  // the service is accessed via an API gateway that forwards responses to browsers
+  // with credentialed requests. If APPOINTMENT_CORS_ORIGIN is '*' we skip
+  // adding CORS headers here to let the API gateway control CORS.
+  const apptCorsOrigin = process.env.APPOINTMENT_CORS_ORIGIN || '';
+  if (apptCorsOrigin && apptCorsOrigin !== '*') {
+    app.use(cors({ origin: apptCorsOrigin, credentials: true }));
+  }
 
   app.get('/health', (req, res) => res.json({ ok: true, service: 'appointment-service' }));
 

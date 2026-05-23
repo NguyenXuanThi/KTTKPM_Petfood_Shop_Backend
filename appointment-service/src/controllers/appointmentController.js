@@ -50,6 +50,53 @@ exports.getSlotsForDate = async (req, res) => {
   }
 };
 
+// List appointments with optional filters
+exports.listAppointments = async (req, res) => {
+  try {
+    const { date, month } = req.query;
+    const filter = {};
+
+    if (date) {
+      if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) {
+        return res.status(400).json({ success: false, message: 'Invalid date' });
+      }
+      filter.appointmentDate = date;
+    } else if (month) {
+      // month format YYYY-MM
+      if (!/^[0-9]{4}-[0-9]{2}$/.test(month)) {
+        return res.status(400).json({ success: false, message: 'Invalid month' });
+      }
+      const start = `${month}-01`;
+      const end = dayjs(start).endOf('month').format('YYYY-MM-DD');
+      filter.appointmentDate = { $gte: start, $lte: end };
+    }
+
+    const appts = await Appointment.find(filter).sort({ appointmentDate: 1, appointmentSlot: 1 }).lean();
+    return res.json({ success: true, data: appts });
+  } catch (err) {
+    console.error('listAppointments error', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// Toggle pin state for an appointment
+exports.pinAppointment = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { isPinned } = req.body;
+    if (typeof isPinned !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isPinned must be boolean' });
+    }
+
+    const appt = await Appointment.findByIdAndUpdate(id, { isPinned }, { new: true }).lean();
+    if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
+    return res.json({ success: true, data: appt });
+  } catch (err) {
+    console.error('pinAppointment error', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 exports.createAppointment = async (req, res) => {
   try {
     const {
