@@ -95,11 +95,24 @@ class LiveService {
     }
   }
 
-  async getMessages(conversationId, limit = 100) {
+  async getMessages(conversationId, limit = 20, before = null) {
     try {
-      const messages = await Message.find({ conversationId })
-        .sort({ createdAt: 1 })
-        .limit(limit);
+      const filter = { conversationId };
+      if (before) {
+        // accept ISO date string
+        const beforeDate = new Date(before);
+        if (!isNaN(beforeDate.getTime())) {
+          // get messages earlier than the beforeDate
+          filter.createdAt = { $lt: beforeDate };
+        }
+      }
+
+      // Fetch newest messages first (optionally before a date), then reverse to chronological order
+      const msgs = await Message.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+      const messages = msgs.reverse();
       return { success: true, data: messages };
     } catch (error) {
       console.error('getMessages error:', error.message);

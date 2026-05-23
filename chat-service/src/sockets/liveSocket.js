@@ -103,12 +103,14 @@ module.exports = function(io) {
           // Get updated conversations list for support and admin staff
           const adminConvs = await liveService.getConversationsForAdmin();
           
-          // Notify all admin sockets about updated conversation list
-          io.sockets.sockets.forEach((s) => {
-            if (s.data && s.data.role === 'admin' && adminConvs.success) {
-              s.emit('conversationUpdated', adminConvs.data);
+          // Broadcast updated conversation list so admin UIs receive it in real-time
+          if (adminConvs.success) {
+            try {
+              io.emit('conversationUpdated', adminConvs.data);
+            } catch (e) {
+              console.error('[Socket sendMessage] broadcast conversationUpdated failed', e.message);
             }
-          });
+          }
 
           // Notify support staff assigned to this conversation
           if (participants.data.supportId) {

@@ -48,7 +48,9 @@ class LiveController {
   async getMessages(req, res) {
     try {
       const { conversationId } = req.params;
-      const result = await liveService.getMessages(conversationId);
+      const limit = parseInt(req.query.limit, 10) || 20;
+      const before = req.query.before || null;
+      const result = await liveService.getMessages(conversationId, limit, before);
       if (!result.success) return res.status(500).json({ success: false, error: result.error });
       res.status(200).json({ success: true, data: result.data });
     } catch (error) {
