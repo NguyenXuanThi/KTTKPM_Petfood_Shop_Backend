@@ -23,7 +23,7 @@ async function start() {
 
   const app = createApp();
   app.listen(PORT, () => {
-    console.log(`Appointment service listening on port ${PORT}`);
+    console.log(`appointment-service is running on port ${PORT}`);
   });
 }
 
