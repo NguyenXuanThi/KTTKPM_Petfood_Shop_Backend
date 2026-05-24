@@ -149,5 +149,10 @@ router.patch(
   requireInternal,
   orderController.updatePaymentStatusInternal,
 );
+router.get(
+  "/internal/orders/check-review-eligibility",
+  requireInternal,
+  orderController.checkReviewEligibilityInternal,
+);
 
 module.exports = router;

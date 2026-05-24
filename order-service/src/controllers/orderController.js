@@ -7,6 +7,7 @@ const {
   cancelOrderSchema,
   codPaymentStatusSchema,
   internalPaymentStatusSchema,
+  reviewEligibilityQuerySchema,
 } = require("../validators/orderValidator");
 
 const createOrder = async (req, res, next) => {
@@ -203,6 +204,20 @@ const updatePaymentStatusInternal = async (req, res, next) => {
   }
 };
 
+const checkReviewEligibilityInternal = async (req, res, next) => {
+  try {
+    const query = await reviewEligibilityQuerySchema.validateAsync(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+    const result = await orderService.checkReviewEligibility(query);
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -218,4 +233,5 @@ module.exports = {
   cancelMyBankingOrder,
   updateCodPaymentStatus,
   updatePaymentStatusInternal,
+  checkReviewEligibilityInternal,
 };

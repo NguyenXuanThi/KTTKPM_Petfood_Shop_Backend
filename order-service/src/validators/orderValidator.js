@@ -1,12 +1,24 @@
 const Joi = require("joi");
 
-const objectId = Joi.string().trim().pattern(/^[a-f\d]{24}$/i);
+const objectId = Joi.string()
+  .trim()
+  .pattern(/^[a-f\d]{24}$/i);
 
 const createOrderSchema = Joi.object({
-  selectedCartItemIds: Joi.array().items(objectId.required()).min(1).unique().required(),
-  paymentMethod: Joi.string().valid("cash", "banking").required(),
+  selectedCartItemIds: Joi.array()
+    .items(objectId.required())
+    .min(1)
+    .unique()
+    .required(),
+  paymentMethod: Joi.string().valid("cash", "banking", "vnpay").required(),
   addressId: objectId.required(),
-  couponCode: Joi.string().trim().uppercase().min(3).max(50).allow("").optional(),
+  couponCode: Joi.string()
+    .trim()
+    .uppercase()
+    .min(3)
+    .max(50)
+    .allow("")
+    .optional(),
   notes: Joi.string().trim().max(1000).allow("").optional(),
 });
 
@@ -37,6 +49,12 @@ const internalPaymentStatusSchema = Joi.object({
     .required(),
 });
 
+const reviewEligibilityQuerySchema = Joi.object({
+  userId: objectId.required(),
+  productId: objectId.required(),
+  orderId: objectId.required(),
+});
+
 module.exports = {
   createOrderSchema,
   listAdminOrdersQuerySchema,
@@ -45,4 +63,5 @@ module.exports = {
   cancelOrderSchema,
   codPaymentStatusSchema,
   internalPaymentStatusSchema,
+  reviewEligibilityQuerySchema,
 };
