@@ -1,60 +1,60 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
   role: {
     type: String,
-    enum: ["user", "assistant", "system"],
-    required: true,
+    enum: ['user', 'assistant', 'system'],
+    required: true
   },
   content: {
     type: String,
-    required: true,
+    required: true
   },
   timestamp: {
     type: Date,
-    default: Date.now,
+    default: Date.now
   },
   metadata: {
     type: mongoose.Schema.Types.Mixed,
-    default: {},
-  },
+    default: {}
+  }
 });
 
 const conversationSchema = new mongoose.Schema({
   userId: {
     type: String,
     required: true,
-    index: true,
+    index: true
   },
   sessionId: {
     type: String,
     required: true,
     unique: true,
-    index: true,
+    index: true
   },
   messages: [messageSchema],
   context: {
     type: mongoose.Schema.Types.Mixed,
-    default: {},
+    default: {}
   },
   status: {
     type: String,
-    enum: ["active", "closed"],
-    default: "active",
+    enum: ['active', 'closed'],
+    default: 'active'
   },
   createdAt: {
     type: Date,
-    default: Date.now,
+    default: Date.now
   },
   updatedAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
 });
 
-conversationSchema.pre("save", function (next) {
+conversationSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
 
-module.exports = mongoose.model("Conversation", conversationSchema);
+module.exports = mongoose.model('Conversation', conversationSchema);

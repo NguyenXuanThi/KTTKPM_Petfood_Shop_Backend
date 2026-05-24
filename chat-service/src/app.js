@@ -1,55 +1,53 @@
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const compression = require("compression");
-const config = require("./config/env");
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
+const config = require('./config/env');
 
 const app = express();
 
 // Middlewares
 app.use(helmet());
-app.use(
-  cors({
-    origin: config.CORS_ORIGIN,
-    credentials: true,
-  }),
-);
+app.use(cors({
+  origin: config.CORS_ORIGIN,
+  credentials: true
+}));
 app.use(compression());
-app.use(morgan("dev"));
+app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Health check
-app.get("/health", (req, res) => {
+app.get('/health', (req, res) => {
   res.json({
-    status: "OK",
-    service: "Chat Service",
-    timestamp: new Date().toISOString(),
+    status: 'OK',
+    service: 'Chat Service',
+    timestamp: new Date().toISOString()
   });
 });
 
 // Routes
-const chatRoutes = require("./routes/chatRoutes");
-const liveRoutes = require("./routes/liveRoutes");
+const chatRoutes = require('./routes/chatRoutes');
+const liveRoutes = require('./routes/liveRoutes');
 
-app.use("/api/chat", chatRoutes);
-app.use("/api/live", liveRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/live', liveRoutes);
 
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Route not found",
+    message: 'Route not found'
   });
 });
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
+  console.error('Error:', err);
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || "Internal server error",
+    message: err.message || 'Internal server error'
   });
 });
 

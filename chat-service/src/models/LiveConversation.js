@@ -1,55 +1,66 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const liveConversationSchema = new mongoose.Schema({
   participants: {
     type: [String],
-    default: [],
+    default: []
   },
   customerId: {
     type: String,
     required: true,
-    index: true,
+    index: true
   },
   customerName: {
     type: String,
-    default: "",
+    default: ''
   },
   customerAvatar: {
     type: String,
-    default: "",
+    default: ''
   },
+  // Support staff handling conversation (primary)
+  supportId: {
+    type: String,
+    default: null,
+    index: true
+  },
+  supportName: {
+    type: String,
+    default: ''
+  },
+  // Backward compatibility: keep adminId for old conversations
   adminId: {
     type: String,
     default: null,
-    index: true,
+    index: true
   },
   lastMessage: {
     type: String,
-    default: "",
+    default: ''
   },
   lastMessageAt: {
     type: Date,
     default: null,
-    index: true,
+    index: true
   },
   status: {
     type: String,
-    enum: ["open", "closed"],
-    default: "open",
+    enum: ['open', 'closed'],
+    default: 'open'
   },
   createdAt: {
     type: Date,
-    default: Date.now,
+    default: Date.now
   },
   updatedAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
 });
 
-liveConversationSchema.pre("save", function (next) {
+liveConversationSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
 
-module.exports = mongoose.model("LiveConversation", liveConversationSchema);
+module.exports = mongoose.model('LiveConversation', liveConversationSchema);
