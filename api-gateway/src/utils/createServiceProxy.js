@@ -1,7 +1,12 @@
 const { createProxyMiddleware } = require("http-proxy-middleware");
 const { proxyTimeoutMs } = require("../config/env");
 
-const createServiceProxy = ({ serviceName, target, upstreamPrefix, gatewayPrefix }) =>
+const createServiceProxy = ({
+  serviceName,
+  target,
+  upstreamPrefix,
+  gatewayPrefix,
+}) =>
   createProxyMiddleware({
     target,
     changeOrigin: true,
@@ -15,9 +20,10 @@ const createServiceProxy = ({ serviceName, target, upstreamPrefix, gatewayPrefix
       const fullPath = req.originalUrl
         ? req.originalUrl.split("?")[0]
         : path.split("?")[0];
-      const query = req.originalUrl && req.originalUrl.includes("?")
-        ? "?" + req.originalUrl.split("?")[1]
-        : "";
+      const query =
+        req.originalUrl && req.originalUrl.includes("?")
+          ? "?" + req.originalUrl.split("?")[1]
+          : "";
       const suffix = fullPath.startsWith(gatewayPrefix)
         ? fullPath.slice(gatewayPrefix.length)
         : path.split("?")[0];
@@ -49,7 +55,7 @@ const createServiceProxy = ({ serviceName, target, upstreamPrefix, gatewayPrefix
                 status === 503
                   ? `${serviceName} is temporarily unavailable`
                   : `${serviceName} proxy error`,
-            })
+            }),
           );
         }
       },
