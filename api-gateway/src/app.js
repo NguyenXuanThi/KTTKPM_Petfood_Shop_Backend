@@ -29,6 +29,8 @@ const reviewProxy = require("./routes/reviewProxy");
 const adminReviewProxy = require("./routes/adminReviewProxy");
 const productReviewProxy = require("./routes/productReviewProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
+const rewardProxy = require("./routes/rewardProxy");
+const adminRewardProxy = require("./routes/adminRewardProxy");
 // const aiProxy = require("./routes/aiProxy");
 // const chatProxy = require("./routes/chatProxy");
 
@@ -127,10 +129,12 @@ app.get("/api/health", (req, res) => {
       payments: "/api/payments/*",
       notifications: "/api/notifications/*",
       reviews: "/api/reviews/*",
+      rewards: "/api/rewards/*",
       productReviews: "/api/products/:productId/reviews",
       adminOrders: "/api/admin/orders/*",
       adminPayments: "/api/admin/payments/*",
       adminReviews: "/api/admin/reviews/*",
+      adminRewards: "/api/admin/rewards/*",
     },
   });
 });
@@ -148,6 +152,7 @@ app.use("/api/orders", requireAuth, orderProxy);
 app.use("/api/payments", requireAuth, paymentProxy);
 app.use("/api/uploads", requireAuth, uploadProxy);
 app.use("/api/reviews", requireAuth, reviewProxy);
+app.use("/api/rewards", requireAuth, rewardProxy);
 
 app.use(
   "/api/coupons",
@@ -160,6 +165,7 @@ app.use("/api/admin/statistics", requireAuth, requireAdmin, statisticsProxy);
 app.use("/api/admin/orders", requireAuth, requireAdmin, adminOrderProxy);
 app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/admin/reviews", requireAuth, requireAdmin, adminReviewProxy);
+app.use("/api/admin/rewards", requireAuth, requireAdmin, adminRewardProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
 
 app.use(notFoundHandler);

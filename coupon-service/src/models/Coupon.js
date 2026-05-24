@@ -50,12 +50,12 @@ const couponSchema = new mongoose.Schema(
     },
     scope: {
       type: String,
-      enum: ["global", "user", "birthday"],
+      enum: ["global", "user", "birthday", "reward"],
       default: "global",
     },
     expiresAt: {
       type: Date,
-      required: true,
+      default: null,
       index: true,
     },
     isActive: {
@@ -98,7 +98,7 @@ const couponSchema = new mongoose.Schema(
 
 // Virtual: is the coupon currently valid?
 couponSchema.virtual("isValid").get(function () {
-  return this.isActive && this.expiresAt > new Date();
+  return this.isActive && (!this.expiresAt || this.expiresAt > new Date());
 });
 
 module.exports = mongoose.model("Coupon", couponSchema);

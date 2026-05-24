@@ -16,6 +16,7 @@ const requiredEnvVars = [
   "PAYMENT_SERVICE_URL",
   "NOTIFICATION_SERVICE_URL",
   "REVIEW_SERVICE_URL",
+  "REWARD_SERVICE_URL",
   "JWT_SECRET",
 ];
 
@@ -42,6 +43,7 @@ module.exports = {
   paymentServiceUrl: process.env.PAYMENT_SERVICE_URL,
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
   reviewServiceUrl: process.env.REVIEW_SERVICE_URL,
+  rewardServiceUrl: process.env.REWARD_SERVICE_URL,
 
   rateLimitWindowMs: Number(
     process.env.API_GATEWAY_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000,

@@ -4,6 +4,8 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
 const couponRoutes = require("./routes/couponRoutes");
+const couponController = require("./controllers/couponController");
+const { requireInternal } = require("./middlewares/authMiddleware");
 const { corsOrigin } = require("./config/env");
 
 const app = express();
@@ -24,6 +26,16 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/coupons", couponRoutes);
+app.post(
+  "/internal/coupons/assign",
+  requireInternal,
+  couponController.assignCouponInternal,
+);
+app.post(
+  "/internal/coupons/batch",
+  requireInternal,
+  couponController.getCouponsBatchInternal,
+);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
