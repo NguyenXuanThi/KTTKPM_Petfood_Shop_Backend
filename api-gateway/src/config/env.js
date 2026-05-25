@@ -19,6 +19,7 @@ const requiredEnvVars = [
   "REWARD_SERVICE_URL",
   "APPOINTMENT_SERVICE_URL",
   "JWT_SECRET",
+  "AI_SERVICE_URL",
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -46,7 +47,7 @@ module.exports = {
   reviewServiceUrl: process.env.REVIEW_SERVICE_URL,
   rewardServiceUrl: process.env.REWARD_SERVICE_URL,
   appointmentServiceUrl: process.env.APPOINTMENT_SERVICE_URL,
-  //  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
+  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
   chatServiceUrl: process.env.CHAT_SERVICE_URL || "http://localhost:3012", // User-Admin chat
 
   rateLimitWindowMs: Number(

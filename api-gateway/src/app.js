@@ -31,7 +31,7 @@ const productReviewProxy = require("./routes/productReviewProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
 const rewardProxy = require("./routes/rewardProxy");
 const adminRewardProxy = require("./routes/adminRewardProxy");
-// const aiProxy = require("./routes/aiProxy");
+const aiProxy = require("./routes/aiProxy");
 const chatProxy = require("./routes/chatProxy");
 const appointmentProxy = require("./routes/appointmentProxy");
 
