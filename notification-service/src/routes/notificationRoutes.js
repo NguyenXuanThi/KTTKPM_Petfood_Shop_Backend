@@ -8,5 +8,9 @@ router.post(
   notificationController.sendReactivationRequest,
 );
 router.post("/coupon-assigned", notificationController.sendCouponAssigned);
+router.post(
+  "/password-reset-otp",
+  notificationController.sendPasswordResetOtp,
+);
 
 module.exports = router;

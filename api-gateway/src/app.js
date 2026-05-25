@@ -154,6 +154,7 @@ app.use("/api/payments", requireAuth, paymentProxy);
 app.use("/api/uploads", requireAuth, uploadProxy);
 app.use("/api/reviews", requireAuth, reviewProxy);
 app.use("/api/rewards", requireAuth, rewardProxy);
+app.use("/api/notifications/password-reset-otp", notificationProxy);
 
 app.use(
   "/api/coupons",

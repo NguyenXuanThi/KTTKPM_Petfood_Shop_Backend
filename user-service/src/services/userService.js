@@ -143,6 +143,23 @@ const changePassword = async (userId, { oldPassword, newPassword }) => {
   return formatUser(user);
 };
 
+const resetPassword = async (userId, newPassword) => {
+  ensureObjectId(userId);
+
+  const user = await userRepository.findById(userId);
+
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.password = await bcrypt.hash(newPassword, bcryptSaltRounds);
+  await user.save();
+
+  return formatUser(user);
+};
+
 const listUsers = async ({
   page,
   limit,
@@ -324,6 +341,7 @@ module.exports = {
   getByEmailForAuth,
   updateProfile,
   changePassword,
+  resetPassword,
   listUsers,
   updateRole,
   updateStatus,

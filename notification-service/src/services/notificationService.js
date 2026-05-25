@@ -74,7 +74,36 @@ const sendCouponAssignedEmail = async ({
   };
 };
 
+const sendPasswordResetOtpEmail = async ({ email, otp }) => {
+  const subject = "Mã xác thực đặt lại mật khẩu";
+  const text = [
+    "Xin chào,",
+    "",
+    "Bạn vừa yêu cầu đặt lại mật khẩu cho tài khoản PetFood.",
+    "",
+    `Mã xác thực của bạn là: ${otp}`,
+    "",
+    "Mã này có hiệu lực trong 180 giây.",
+    "Vui lòng không chia sẻ mã này với bất kỳ ai.",
+    "",
+    "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email này.",
+  ].join("\n");
+
+  await sendEmail({
+    to: email,
+    subject,
+    text,
+    enforceAllowedRecipient: false,
+  });
+
+  return {
+    message: "Password reset OTP email sent",
+    to: email,
+  };
+};
+
 module.exports = {
   sendReactivationRequestEmail,
   sendCouponAssignedEmail,
+  sendPasswordResetOtpEmail,
 };

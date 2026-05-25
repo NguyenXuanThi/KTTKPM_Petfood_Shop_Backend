@@ -18,8 +18,29 @@ const requestReactivationSchema = Joi.object({
     .required(),
 });
 
+const forgotPasswordSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+});
+
+const resetPasswordSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+  otp: Joi.string()
+    .trim()
+    .pattern(/^\d{6}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Mã xác thực phải gồm 6 chữ số",
+    }),
+  newPassword: Joi.string().min(6).max(128).required(),
+  confirmPassword: Joi.string().valid(Joi.ref("newPassword")).required().messages({
+    "any.only": "Mật khẩu xác nhận không khớp",
+  }),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
   requestReactivationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 };

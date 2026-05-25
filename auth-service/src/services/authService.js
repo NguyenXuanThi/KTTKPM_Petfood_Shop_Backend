@@ -1,4 +1,6 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+const PasswordResetOtp = require("../models/PasswordResetOtp");
 const sessionRepository = require("../repositories/sessionRepository");
 const {
   signAccessToken,
@@ -8,6 +10,29 @@ const {
 } = require("../utils/token");
 const userClient = require("./userClient");
 const notificationClient = require("./notificationClient");
+
+const OTP_TTL_MS = 180 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const RESEND_WINDOW_MS = 15 * 60 * 1000;
+const MAX_RESEND_COUNT = 3;
+const MAX_VERIFY_ATTEMPTS = 5;
+const FORGOT_PASSWORD_MESSAGE =
+  "Nếu email tồn tại, mã xác thực sẽ được gửi đến email của bạn.";
+
+const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
+
+const getActivePasswordResetOtp = (email) =>
+  PasswordResetOtp.findOne({
+    email,
+    usedAt: null,
+    invalidatedAt: null,
+  }).sort({ createdAt: -1 });
+
+const createPasswordResetError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
 
 const createSession = async (userId) => {
   const refreshToken = signRefreshToken(userId);
@@ -166,6 +191,139 @@ const requestReactivation = async (userId) => {
   };
 };
 
+const forgotPassword = async ({ email }) => {
+  const normalizedEmail = email.toLowerCase();
+
+  let user;
+  try {
+    user = await userClient.getUserByEmail(normalizedEmail);
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return { message: FORGOT_PASSWORD_MESSAGE };
+    }
+    throw error;
+  }
+
+  const now = new Date();
+  const activeOtp = await getActivePasswordResetOtp(normalizedEmail);
+
+  if (activeOtp) {
+    if (activeOtp.lockedUntil && activeOtp.lockedUntil > now) {
+      throw createPasswordResetError(
+        "Bạn đã gửi lại mã quá số lần cho phép. Vui lòng thử lại sau.",
+        429,
+      );
+    }
+
+    if (activeOtp.resendAvailableAt && activeOtp.resendAvailableAt > now) {
+      throw createPasswordResetError(
+        "Vui lòng chờ trước khi gửi lại mã",
+        429,
+      );
+    }
+
+    const windowStartedAt = activeOtp.resendWindowStartedAt || activeOtp.createdAt;
+    const isSameWindow = now.getTime() - windowStartedAt.getTime() <= RESEND_WINDOW_MS;
+    const nextResendCount = isSameWindow ? activeOtp.resendCount + 1 : 1;
+
+    if (nextResendCount > MAX_RESEND_COUNT) {
+      activeOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
+      await activeOtp.save();
+      throw createPasswordResetError(
+        "Bạn đã gửi lại mã quá số lần cho phép. Vui lòng thử lại sau.",
+        429,
+      );
+    }
+
+    activeOtp.invalidatedAt = now;
+    await activeOtp.save();
+
+    const otp = generateOtp();
+    await PasswordResetOtp.create({
+      email: normalizedEmail,
+      userId: user.id || user._id,
+      otpHash: await bcrypt.hash(otp, 10),
+      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+      resendAvailableAt: new Date(now.getTime() + RESEND_COOLDOWN_MS),
+      resendCount: nextResendCount,
+      resendWindowStartedAt: isSameWindow ? windowStartedAt : now,
+    });
+
+    await notificationClient.sendPasswordResetOtp({ email: normalizedEmail, otp });
+    return { message: FORGOT_PASSWORD_MESSAGE };
+  }
+
+  const otp = generateOtp();
+  await PasswordResetOtp.create({
+    email: normalizedEmail,
+    userId: user.id || user._id,
+    otpHash: await bcrypt.hash(otp, 10),
+    expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+    resendAvailableAt: new Date(now.getTime() + RESEND_COOLDOWN_MS),
+    resendCount: 0,
+    resendWindowStartedAt: now,
+  });
+
+  await notificationClient.sendPasswordResetOtp({ email: normalizedEmail, otp });
+  return { message: FORGOT_PASSWORD_MESSAGE };
+};
+
+const resetPassword = async ({ email, otp, newPassword }) => {
+  const normalizedEmail = email.toLowerCase();
+  const now = new Date();
+  const resetOtp = await getActivePasswordResetOtp(normalizedEmail);
+
+  if (!resetOtp) {
+    throw createPasswordResetError("Mã xác thực không hợp lệ", 400);
+  }
+
+  if (resetOtp.lockedUntil && resetOtp.lockedUntil > now) {
+    throw createPasswordResetError(
+      "Bạn đã nhập sai quá số lần cho phép",
+      429,
+    );
+  }
+
+  if (resetOtp.expiresAt <= now) {
+    resetOtp.invalidatedAt = now;
+    await resetOtp.save();
+    throw createPasswordResetError("Mã xác thực đã hết hạn", 400);
+  }
+
+  if (resetOtp.attempts >= MAX_VERIFY_ATTEMPTS) {
+    resetOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
+    await resetOtp.save();
+    throw createPasswordResetError(
+      "Bạn đã nhập sai quá số lần cho phép",
+      429,
+    );
+  }
+
+  const isOtpValid = await bcrypt.compare(otp, resetOtp.otpHash);
+
+  if (!isOtpValid) {
+    resetOtp.attempts += 1;
+    if (resetOtp.attempts >= MAX_VERIFY_ATTEMPTS) {
+      resetOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
+    }
+    await resetOtp.save();
+
+    throw createPasswordResetError(
+      resetOtp.attempts >= MAX_VERIFY_ATTEMPTS
+        ? "Bạn đã nhập sai quá số lần cho phép"
+        : "Mã xác thực không hợp lệ",
+      resetOtp.attempts >= MAX_VERIFY_ATTEMPTS ? 429 : 400,
+    );
+  }
+
+  await userClient.resetPassword(resetOtp.userId, newPassword);
+  resetOtp.usedAt = now;
+  await resetOtp.save();
+  await sessionRepository.deleteManyByUserId(resetOtp.userId);
+
+  return { message: "Đặt lại mật khẩu thành công" };
+};
+
 module.exports = {
   register,
   login,
@@ -173,4 +331,6 @@ module.exports = {
   refresh,
   logout,
   requestReactivation,
+  forgotPassword,
+  resetPassword,
 };
