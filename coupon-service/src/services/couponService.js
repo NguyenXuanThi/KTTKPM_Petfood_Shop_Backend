@@ -48,13 +48,25 @@ const publicCouponDto = (coupon) => ({
   perUserLimit: coupon.perUserLimit,
 });
 
+const isCouponExpired = (coupon, now = new Date()) =>
+  Boolean(coupon?.expiresAt) && coupon.expiresAt <= now;
+
 const isCouponActiveNow = (coupon, now = new Date()) =>
-  Boolean(coupon?.isActive) && coupon.expiresAt > now;
+  Boolean(coupon?.isActive) && !isCouponExpired(coupon, now);
 
 const hasGlobalUsageLeft = (coupon) =>
   coupon.usageLimit === null ||
   coupon.usageLimit === undefined ||
   coupon.usedCount < coupon.usageLimit;
+
+const assignedScopes = ["user", "birthday", "reward"];
+
+const isUserCouponActiveNow = (userCoupon, coupon, now = new Date()) => {
+  if (!userCoupon || userCoupon.status !== "active") return false;
+  if (userCoupon.expiresAt && userCoupon.expiresAt <= now) return false;
+  if (coupon?.expiresAt && coupon.expiresAt <= now) return false;
+  return true;
+};
 
 const calculateCouponDiscount = ({ coupon, orderAmount, shippingFee }) => {
   const base = coupon.appliesTo === "shipping" ? shippingFee : orderAmount;
@@ -113,14 +125,14 @@ const validateCouponForUser = async ({ userId, code, orderAmount, shippingFee })
   }
 
   let userCoupon = null;
-  if (["user", "birthday"].includes(coupon.scope)) {
+  if (assignedScopes.includes(coupon.scope)) {
     userCoupon = await UserCoupon.findOne({
       userId,
       couponId: coupon._id,
       status: "active",
     });
 
-    if (!userCoupon) {
+    if (!isUserCouponActiveNow(userCoupon, coupon)) {
       return {
         ...invalidCoupon("This coupon is not available for your account"),
         finalAmount: grossAmount,
@@ -168,11 +180,12 @@ const getAvailableCoupons = async ({ userId, subtotal = 0, shippingFee = 0 }) =>
   const fee = Number(shippingFee);
   const result = [];
   const seenCodes = new Set();
+  const now = new Date();
 
   const publicCoupons = await Coupon.find({
     scope: "global",
     isActive: true,
-    expiresAt: { $gt: new Date() },
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
   }).sort({ createdAt: -1 });
 
   for (const coupon of publicCoupons) {
@@ -198,7 +211,7 @@ const getAvailableCoupons = async ({ userId, subtotal = 0, shippingFee = 0 }) =>
   for (const userCoupon of assignedCoupons) {
     const coupon = userCoupon.couponId;
     if (!coupon || seenCodes.has(coupon.code)) continue;
-    if (!["user", "birthday"].includes(coupon.scope)) continue;
+    if (!assignedScopes.includes(coupon.scope)) continue;
 
     const validation = await validateCouponForUser({
       userId,
@@ -262,6 +275,17 @@ const listCoupons = async () => {
   return Coupon.find().sort({ createdAt: -1 });
 };
 
+const getCouponsByIds = async (couponIds = []) => {
+  const uniqueIds = [...new Set(couponIds.map((id) => id.toString()))];
+  const coupons = await Coupon.find({ _id: { $in: uniqueIds } });
+  const couponMap = new Map(coupons.map((coupon) => [coupon._id.toString(), coupon]));
+
+  return uniqueIds
+    .map((id) => couponMap.get(id))
+    .filter(Boolean)
+    .map(publicCouponDto);
+};
+
 // ─── Admin: disable coupon ───────────────────────────────────────────────────
 
 const disableCoupon = async (couponId) => {
@@ -279,14 +303,21 @@ const assignCoupon = async ({ couponId, userId }) => {
   const coupon = await Coupon.findById(couponId);
   if (!coupon) throw createError("Coupon not found", 404);
   if (!coupon.isActive) throw createError("Coupon is disabled", 400);
-  if (coupon.expiresAt <= new Date()) throw createError("Coupon has expired", 400);
+  if (isCouponExpired(coupon)) throw createError("Coupon has expired", 400);
 
   // Verify user exists via user-service
   const user = await fetchUser(userId);
 
   const userCoupon = await UserCoupon.findOneAndUpdate(
     { userId, couponId },
-    { userId, couponId, assignedBy: "admin", status: "active" },
+    {
+      userId,
+      couponId,
+      assignedBy: "admin",
+      source: "admin_gift",
+      assignedAt: new Date(),
+      status: "active",
+    },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
@@ -312,6 +343,43 @@ const assignCoupon = async ({ couponId, userId }) => {
   return userCoupon;
 };
 
+const assignCouponInternal = async ({
+  couponId,
+  userId,
+  assignedBy = "system",
+  source,
+  expiresAt = null,
+}) => {
+  const coupon = await Coupon.findById(couponId);
+  if (!coupon) throw createError("Coupon not found", 404);
+  if (!coupon.isActive) throw createError("Coupon is disabled", 400);
+  if (isCouponExpired(coupon)) throw createError("Coupon has expired", 400);
+
+  const existing = await UserCoupon.findOne({ userId, couponId });
+  if (existing && isUserCouponActiveNow(existing, coupon)) {
+    return existing;
+  }
+
+  const userCoupon = await UserCoupon.findOneAndUpdate(
+    { userId, couponId },
+    {
+      userId,
+      couponId,
+      assignedBy,
+      source,
+      assignedAt: new Date(),
+      expiresAt,
+      status: "active",
+      usedAt: null,
+      orderId: null,
+      discountAmount: 0,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  return userCoupon;
+};
+
 // ─── User: get my coupons ────────────────────────────────────────────────────
 
 const getMyCoupons = async (userId, filters = {}) => {
@@ -328,7 +396,10 @@ const getMyCoupons = async (userId, filters = {}) => {
     if (!coupon) continue;
 
     // Lazily mark as expired
-    if (uc.status === "active" && (!coupon.isActive || coupon.expiresAt <= now)) {
+    if (
+      uc.status === "active" &&
+      (!coupon.isActive || isCouponExpired(coupon, now) || (uc.expiresAt && uc.expiresAt <= now))
+    ) {
       uc.status = "expired";
       await uc.save();
     }
@@ -337,6 +408,9 @@ const getMyCoupons = async (userId, filters = {}) => {
       _id: uc._id,
       status: uc.status,
       assignedBy: uc.assignedBy,
+      source: uc.source,
+      assignedAt: uc.assignedAt,
+      expiresAt: uc.expiresAt,
       createdAt: uc.createdAt,
       coupon: publicCouponDto(coupon),
     };
@@ -359,10 +433,11 @@ const getMyCoupons = async (userId, filters = {}) => {
 };
 
 const getPublicCoupons = async ({ userId, orderAmount = 0, shippingFee = 0 }) => {
+  const now = new Date();
   const coupons = await Coupon.find({
     scope: "global",
     isActive: true,
-    expiresAt: { $gt: new Date() },
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
   }).sort({ createdAt: -1 });
 
   const result = [];
@@ -386,14 +461,17 @@ const validateCoupon = async ({ userId, code, orderAmount, shippingFee }) =>
 const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee, discountAmount = 0 }) => {
   const coupon = await Coupon.findOne({ code: code.toUpperCase() });
   if (!coupon) throw createError("Coupon not found", 404);
+  if (!isCouponActiveNow(coupon)) throw createError("Coupon is inactive or expired", 400);
 
-  if (["user", "birthday"].includes(coupon.scope)) {
+  if (assignedScopes.includes(coupon.scope)) {
     const activeAssignment = await UserCoupon.findOne({
       userId,
       couponId: coupon._id,
       status: "active",
     });
-    if (!activeAssignment) throw createError("This coupon is not available for your account", 403);
+    if (!isUserCouponActiveNow(activeAssignment, coupon)) {
+      throw createError("This coupon is not available for your account", 403);
+    }
   }
 
   const usedByUser = await UserCoupon.countDocuments({
@@ -418,6 +496,7 @@ const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee,
   };
   if (coupon.scope === "global") {
     usagePayload.assignedBy = "system";
+    usagePayload.source = "admin_gift";
   }
 
   const userCoupon = await UserCoupon.findOneAndUpdate(
@@ -479,7 +558,15 @@ const assignBirthdayCoupon = async ({ userId, adminId }) => {
 
   const userCoupon = await UserCoupon.findOneAndUpdate(
     { userId, couponId: coupon._id },
-    { userId, couponId: coupon._id, assignedBy: "system", status: "active" },
+    {
+      userId,
+      couponId: coupon._id,
+      assignedBy: "system",
+      source: "birthday",
+      assignedAt: new Date(),
+      status: "active",
+      expiresAt,
+    },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
@@ -489,8 +576,10 @@ const assignBirthdayCoupon = async ({ userId, adminId }) => {
 module.exports = {
   createCoupon,
   listCoupons,
+  getCouponsByIds,
   disableCoupon,
   assignCoupon,
+  assignCouponInternal,
   getMyCoupons,
   getPublicCoupons,
   getAvailableCoupons,
@@ -498,3 +587,4 @@ module.exports = {
   markCouponUsed,
   assignBirthdayCoupon,
 };
+

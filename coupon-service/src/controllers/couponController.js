@@ -2,10 +2,12 @@ const couponService = require("../services/couponService");
 const {
   createCouponSchema,
   assignCouponSchema,
+  internalAssignCouponSchema,
   idParamSchema,
   validateCouponSchema,
   usableCouponsQuerySchema,
   markCouponUsedSchema,
+  batchCouponsSchema,
 } = require("../validators/couponValidator");
 
 // POST /coupons — Admin creates a coupon
@@ -73,6 +75,45 @@ const getMyCoupons = async (req, res, next) => {
     });
 
     return res.status(200).json({ coupons });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const assignCouponInternal = async (req, res, next) => {
+  try {
+    const payload = await internalAssignCouponSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const userCoupon = await couponService.assignCouponInternal(payload);
+
+    return res.status(200).json({
+      success: true,
+      message: "Coupon assigned",
+      userCoupon,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getCouponsBatchInternal = async (req, res, next) => {
+  try {
+    const payload = await batchCouponsSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const coupons = await couponService.getCouponsByIds(payload.couponIds);
+
+    return res.status(200).json({
+      success: true,
+      coupons,
+    });
   } catch (error) {
     return next(error);
   }
@@ -191,6 +232,8 @@ module.exports = {
   createCoupon,
   disableCoupon,
   assignCoupon,
+  assignCouponInternal,
+  getCouponsBatchInternal,
   getMyCoupons,
   getPublicCoupons,
   getAvailableCoupons,

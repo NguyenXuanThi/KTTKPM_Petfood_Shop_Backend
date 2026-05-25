@@ -44,6 +44,14 @@ const sendReactivationRequest = async ({
     },
   });
 
+const sendPasswordResetOtp = async ({ email, otp }) =>
+  callNotificationService({
+    method: "post",
+    url: `${notificationServiceUrl}/notifications/password-reset-otp`,
+    data: { email, otp },
+  });
+
 module.exports = {
   sendReactivationRequest,
+  sendPasswordResetOtp,
 };

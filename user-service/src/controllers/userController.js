@@ -3,6 +3,7 @@ const {
   createUserSchema,
   updateProfileSchema,
   changePasswordSchema,
+  resetPasswordSchema,
   updateRoleSchema,
   updateStatusSchema,
   deactivateUserSchema,
@@ -106,6 +107,31 @@ const changeMyPassword = async (req, res, next) => {
 
     return res.status(200).json({
       message: "Change password successful",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { id } = await idParamSchema.validateAsync(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const { newPassword } = await resetPasswordSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
+
+    const user = await userService.resetPassword(id, newPassword);
+
+    return res.status(200).json({
+      message: "Reset password successful",
       user,
     });
   } catch (error) {
@@ -317,6 +343,7 @@ module.exports = {
   getMe,
   updateMe,
   changeMyPassword,
+  resetPassword,
   listUsers,
   updateUserRole,
   updateUserStatus,

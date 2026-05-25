@@ -2,292 +2,476 @@ const Groq = require('groq-sdk');
 const config = require('../config/env');
 const productClient = require('./productClient');
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Groq Function Calling Tool Definitions
+// ──────────────────────────────────────────────────────────────────────────────
+const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_products',
+      description:
+        'Tim kiem san pham thuc an thu cung theo tu khoa. ' +
+        'QUY TAC BAT BUOC: chi dung MOT tu ngan nhat co the. ' +
+        'Dung: "cho" (khong phai "thuc an cho cho"), "meo", "pate", "hat", "cat", "xuong", "snack". ' +
+        'Neu user hoi ve san pham cu the, hay search truoc de lay danh sach roi moi dung ID that.',
+      parameters: {
+        type: 'object',
+        properties: {
+          keywords: {
+            type: 'string',
+            description: 'MOT tu ngan nhat. Vi du: "cho", "meo", "pate", "cat", "hat", "royal canin"',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Số sản phẩm tối đa trả về. Mặc định 3, tối đa 5.',
+            default: 3,
+          },
+        },
+        required: ['keywords'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'check_inventory',
+      description:
+        'Kiem tra ton kho san pham. ' +
+        'CANH BAO: chi dung productId LAY TU KET QUA search_products (truong _id). ' +
+        'TUYET DOI KHONG tu dat productId. Neu chua biet _id, hay goi search_products truoc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          productId: {
+            type: 'string',
+            description: 'MongoDB _id cua san pham, lay tu ket qua search_products. Vi du: "64f3a1b2c8e9d0001234abcd"',
+          },
+        },
+        required: ['productId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_to_cart_context',
+      description:
+        'Them san pham vao gio hang khi user muon mua. ' +
+        'CANH BAO: chi dung productId LAY TU KET QUA search_products (truong _id). ' +
+        'TUYET DOI KHONG tu dat productId. Neu chua biet _id, hay goi search_products truoc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          productId: {
+            type: 'string',
+            description: 'MongoDB _id cua san pham, lay tu ket qua search_products. Vi du: "64f3a1b2c8e9d0001234abcd"',
+          },
+          quantity: {
+            type: 'integer',
+            description: 'Số lượng cần thêm. Mặc định 1.',
+            default: 1,
+          },
+        },
+        required: ['productId', 'quantity'],
+      },
+    },
+  },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// AIService Class
+// ──────────────────────────────────────────────────────────────────────────────
 class AIService {
   constructor() {
-    this.groq = new Groq({
-      apiKey: config.GROQ_API_KEY
-    });
+    this.groq = new Groq({ apiKey: config.GROQ_API_KEY });
     this.model = config.GROQ_MODEL;
   }
 
+  // ---------------------------------------------------------------------------
+  // Execute a single tool call and return { result, contextUpdates }
+  // ---------------------------------------------------------------------------
+  async executeTool(toolName, toolArgs, context) {
+    const contextUpdates = {};
+    let result = {};
+
+    try {
+      switch (toolName) {
+        // ── search_products ──────────────────────────────────────────────────
+        case 'search_products': {
+          const { keywords, limit = 3 } = toolArgs;
+          const searchResult = await productClient.searchProducts(keywords, Math.min(limit, 5));
+          const products = searchResult.success ? searchResult.data : [];
+          contextUpdates.products = products;
+          result = {
+            found: products.length > 0,
+            count: products.length,
+            products: products.map((p) => ({
+              _id: p._id,
+              name: p.name,
+              price: p.price,
+              stock: p.stock,
+              category: p.category,
+            })),
+          };
+          break;
+        }
+
+        // ── check_inventory ──────────────────────────────────────────────────
+        case 'check_inventory': {
+          const { productId } = toolArgs;
+          // Validate: must be a real MongoDB ObjectId (24 hex chars)
+          if (!/^[0-9a-fA-F]{24}$/.test(productId)) {
+            result = {
+              error: 'productId khong hop le. Hay goi search_products truoc de lay _id that cua san pham.',
+              hint: 'Dung _id tu ket qua search_products, khong tu dat ID.',
+            };
+            break;
+          }
+          const inventoryResult = await productClient.checkInventory(productId);
+          if (inventoryResult.success) {
+            const stock = inventoryResult.data?.stock ?? 0;
+            result = {
+              productId,
+              stock,
+              available: stock > 0,
+              message: stock > 0 ? `Con ${stock} san pham trong kho` : 'San pham da het hang',
+            };
+          } else {
+            result = { productId, available: false, message: 'Khong the kiem tra ton kho luc nay' };
+          }
+          break;
+        }
+
+        // ── add_to_cart_context ──────────────────────────────────────────────
+        case 'add_to_cart_context': {
+          const { productId, quantity = 1 } = toolArgs;
+          // Validate: must be a real MongoDB ObjectId (24 hex chars)
+          if (!/^[0-9a-fA-F]{24}$/.test(productId)) {
+            result = {
+              error: 'productId khong hop le. Hay goi search_products truoc de lay _id that cua san pham.',
+              hint: 'Dung _id tu ket qua search_products, khong tu dat ID.',
+            };
+            break;
+          }
+          const products = context.products || [];
+          const product = products.find((p) => p._id?.toString() === productId);
+
+          if (!context.cart) context.cart = [];
+
+          if (product) {
+            const existingItem = context.cart.find(
+              (ci) => ci.product._id?.toString() === productId
+            );
+            if (existingItem) {
+              existingItem.quantity += quantity;
+            } else {
+              context.cart.push({ product, quantity });
+            }
+            contextUpdates.cart = [...context.cart];
+            result = {
+              success: true,
+              message: `Đã thêm ${quantity} "${product.name}" vào giỏ hàng`,
+              cartCount: context.cart.length,
+            };
+          } else {
+            result = { success: false, message: 'Không tìm thấy sản phẩm trong danh sách hiện tại để thêm vào giỏ' };
+          }
+          break;
+        }
+
+        default:
+          result = { error: `Unknown tool: ${toolName}` };
+      }
+    } catch (err) {
+      console.error(`[AIService] Tool execution error (${toolName}):`, err.message);
+      result = { error: err.message };
+    }
+
+    return { result, contextUpdates };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main chat function — supports multi-turn Function Calling
+  // ---------------------------------------------------------------------------
   async chat(messages, context = {}) {
     try {
-      // Build system prompt with context
       const systemPrompt = this.buildSystemPrompt(context);
-      
-      // Include recent conversation history (last 10 messages for context)
-      const recentMessages = messages.slice(-10);
-      
+
+      // Use summary + last 2 messages when summary exists; otherwise last 10
+      const recentMessages = context.summary ? messages.slice(-2) : messages.slice(-10);
+
       const chatMessages = [
         { role: 'system', content: systemPrompt },
-        ...recentMessages.map(m => ({ role: m.role, content: m.content }))
+        ...recentMessages.map((m) => ({ role: m.role, content: m.content })),
       ];
 
+      const contextUpdates = {};
+      const toolsUsed = [];
+
+      // ── First Groq call (with tools) ──────────────────────────────────────
       const completion = await this.groq.chat.completions.create({
         messages: chatMessages,
         model: this.model,
-        temperature: 0.3, // Very low for direct, consistent answers
-        max_tokens: 512, // Shorter responses
+        temperature: 0.3,
+        max_tokens: 512,
         top_p: 1,
-        stream: false
+        stream: false,
+        tools: TOOLS,
+        tool_choice: 'auto',
       });
 
+      const firstChoice = completion.choices[0];
+
+      // ── Detect leaked tool call in text (model bug workaround) ────────────
+      // Some model versions emit tool calls as text instead of tool_calls field.
+      // Patterns: <function=NAME>ARGS</function>  or  <function>...</function>
+      if (
+        firstChoice.finish_reason !== 'tool_calls' &&
+        firstChoice.message?.content &&
+        (/<function[=>]/i.test(firstChoice.message.content) || /<function>/i.test(firstChoice.message.content))
+      ) {
+        console.warn('[AIService] ⚠️  Detected leaked tool call in text response — stripping and retrying without tools');
+        const cleanedContent = this._cleanResponse(firstChoice.message.content);
+        if (cleanedContent && cleanedContent !== 'Xin lỗi, tôi không thể trả lời lúc này.') {
+          return {
+            success: true,
+            message: cleanedContent,
+            usage: completion.usage,
+            toolsUsed: [],
+            contextUpdates: {},
+          };
+        }
+        // If nothing meaningful left after cleaning, retry without tools
+        const retryCompletion = await this.groq.chat.completions.create({
+          messages: chatMessages,
+          model: this.model,
+          temperature: 0.3,
+          max_tokens: 256,
+          top_p: 1,
+          stream: false,
+          // No tools — force plain text response
+        });
+        return {
+          success: true,
+          message: this._cleanResponse(retryCompletion.choices[0]?.message?.content || 'Xin lỗi, tôi không thể trả lời lúc này.'),
+          usage: retryCompletion.usage,
+          toolsUsed: [],
+          contextUpdates: {},
+        };
+      }
+
+      // ── Handle tool_calls (Function Calling) ──────────────────────────────
+      if (
+        firstChoice.finish_reason === 'tool_calls' &&
+        firstChoice.message.tool_calls?.length > 0
+      ) {
+        const toolCallResults = [];
+
+        for (const toolCall of firstChoice.message.tool_calls) {
+          const toolName = toolCall.function.name;
+          let toolArgs = {};
+          try {
+            toolArgs = JSON.parse(toolCall.function.arguments);
+          } catch (_) {
+            toolArgs = {};
+          }
+
+          console.log(`[AIService] 🔧 Tool called: ${toolName}`, toolArgs);
+          toolsUsed.push(toolName);
+
+          const { result, contextUpdates: updates } = await this.executeTool(
+            toolName,
+            toolArgs,
+            context
+          );
+          // Apply context updates immediately so subsequent tools in same batch see them
+          Object.assign(context, updates);
+          Object.assign(contextUpdates, updates);
+
+          toolCallResults.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            content: JSON.stringify(result),
+          });
+        }
+
+        // ── Second Groq call with tool results ──────────────────────────────
+        const followUpMessages = [
+          ...chatMessages,
+          firstChoice.message,           // assistant message with tool_calls
+          ...toolCallResults,            // tool results
+        ];
+
+        const finalCompletion = await this.groq.chat.completions.create({
+          messages: followUpMessages,
+          model: this.model,
+          temperature: 0.3,
+          max_tokens: 512,
+          top_p: 1,
+          stream: false,
+        });
+
+        return {
+          success: true,
+          message:
+            this._cleanResponse(finalCompletion.choices[0]?.message?.content ||
+              'Xin lỗi, tôi không thể trả lời lúc này.'),
+          usage: finalCompletion.usage,
+          toolsUsed,
+          contextUpdates,
+        };
+      }
+
+      // ── No tool calls — direct text response ──────────────────────────────
       return {
         success: true,
-        message: completion.choices[0]?.message?.content || 'Xin lỗi, tôi không thể trả lời lúc này.',
-        usage: completion.usage
+        message: this._cleanResponse(firstChoice.message?.content || 'Xin lỗi, tôi không thể trả lời lúc này.'),
+        usage: completion.usage,
+        toolsUsed: [],
+        contextUpdates: {},
       };
     } catch (error) {
-      console.error('AI Service Error:', error.message);
+      console.error('[AIService] Error:', error.message);
       return {
         success: false,
         message: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.',
-        error: error.message
+        error: error.message,
+        toolsUsed: [],
+        contextUpdates: {},
       };
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Build system prompt — uses summary + products/cart context
+  // ---------------------------------------------------------------------------
   buildSystemPrompt(context = {}) {
-    let prompt = `Bạn là trợ lý AI của PetFood - cửa hàng thú cưng.
+    let prompt = `Bạn là trợ lý AI của PawMart - cửa hàng thú cưng cao cấp.
 
-**Cách trả lời:**
-- NGẮN GỌN (1-2 câu)
-- TRỰC TIẾP, thân thiện
-- Nhớ toàn bộ ngữ cảnh
+**Nguyên tắc trả lời:**
+- NGẮN GỌN (1-3 câu), thân thiện, dùng tiếng Việt
+- Khi user hỏi sản phẩm → dùng tool search_products
+- Khi user hỏi còn hàng không → dùng check_inventory (chỉ sau khi đã có _id từ search_products)
+- Khi user muốn mua/thêm vào giỏ:
+  * Nếu đã có sản phẩm trong SẢN PHẨM ĐANG HIỂN THỊ → dùng add_to_cart_context với _id đó
+  * Nếu CHƯA có sản phẩm → dùng search_products TRƯỚC, rồi mới add_to_cart_context
+  * TUYỆT ĐỐI KHÔNG tự đặt productId — chỉ dùng _id lấy từ kết quả search_products
+
+**QUY TẮC QUAN TRỌNG:**
+- Không bao giờ hiển thị raw JSON, function call, hay code trong câu trả lời
+- Chỉ trả lời bằng ngôn ngữ tự nhiên tiếng Việt
 
 `;
 
-    // Handle order context
+    if (context.summary) {
+      prompt += `**TÓM TẮT HỘI THOẠI TRƯỚC:**\n${context.summary}\n\n`;
+    }
+
     if (context.cart && context.cart.length > 0) {
-      prompt += `\n**GIỎ HÀNG HIỆN TẠI:**\n`;
+      prompt += `**GIỎ HÀNG HIỆN TẠI:**\n`;
       let total = 0;
-      context.cart.forEach(item => {
-        const itemTotal = item.product.price * item.quantity;
+      context.cart.forEach((item) => {
+        const itemTotal = (item.product.price || 0) * item.quantity;
         total += itemTotal;
         prompt += `- ${item.product.name} x${item.quantity} = ${itemTotal.toLocaleString('vi-VN')}đ\n`;
       });
       prompt += `Tổng: ${total.toLocaleString('vi-VN')}đ\n\n`;
-      
-      if (context.pendingCheckout) {
-        prompt += `Khách đã xác nhận mua. Nói: "Tuyệt vời! Tôi đã chuẩn bị đơn hàng cho bạn. Hãy bấm nút bên dưới để hoàn tất đặt hàng."\n`;
-      } else {
-        prompt += `Khách vừa thêm sản phẩm vào giỏ. Nói: "Đã thêm vào giỏ hàng! Bạn có muốn mua thêm sản phẩm nào không? Hoặc bạn có thể đặt hàng ngay."\n`;
-      }
-      return prompt;
     }
 
-    // Handle product display
-    if (context.quantityIntent && context.quantityIntent.isSingle) {
-      prompt += `Khách yêu cầu 1 sản phẩm. Nói: "Đây là sản phẩm phù hợp nhất cho bạn:"\n`;
-    } else if (context.products && context.products.length > 0) {
-      prompt += `Nói: "Tôi tìm thấy những sản phẩm này cho bạn:"\n`;
-    }
-
-    prompt += `\n**Khi KHÔNG tìm thấy:**
-Nói: "Xin lỗi, hiện tại chúng tôi chưa có sản phẩm này."
-
-`;
-
-    // Add product context if available
     if (context.products && context.products.length > 0) {
-      prompt += `\n**SẢN PHẨM đang hiển thị:**\n`;
+      prompt += `**SẢN PHẨM ĐANG HIỂN THỊ (dùng _id này để add_to_cart_context):**\n`;
       context.products.forEach((product, index) => {
-        prompt += `${index + 1}. ${product.name} - ${product.price?.toLocaleString('vi-VN')}đ (Còn ${product.stock})\n`;
+        prompt += `${index + 1}. [_id: ${product._id}] ${product.name} - ${product.price?.toLocaleString('vi-VN')}đ (Còn ${product.stock} sản phẩm)\n`;
       });
-      prompt += `\nKhách có thể nói "mua 2 hộp đó" để thêm vào giỏ.\n`;
+      prompt += `\nKhi user nói "mua cái đó", "mua 2 túi", "thêm vào giỏ" → dùng add_to_cart_context với _id ở trên.\n\n`;
     }
 
     return prompt;
   }
 
-  async analyzeIntent(userMessage) {
-    // Simple intent detection
-    const message = userMessage.toLowerCase();
-    
-    // Confirm order intent - HIGHEST PRIORITY
-    if (message.includes('mua ngay') || message.includes('đặt ngay') ||
-        message.includes('mua luôn') || message.includes('đặt luôn') ||
-        message.includes('đặt hàng online') || message.includes('ok mua') ||
-        message.includes('đồng ý mua') || message.includes('xác nhận')) {
-      return { intent: 'confirm_order', confidence: 0.95 };
-    }
-    
-    // Continue shopping intent
-    if (message.includes('mua thêm') || message.includes('thêm') ||
-        message.includes('tiếp') || message.includes('nữa') ||
-        message.includes('tìm thêm')) {
-      return { intent: 'continue_shopping', confidence: 0.9 };
-    }
-    
-    // Order intent - when user wants to add to cart
-    // Must have quantity indicator + product reference
-    const hasQuantity = /(\d+|một|hai|ba|bốn|năm)\s*(hộp|bịch|gói|chai|lon|kg|g)/i.test(message);
-    const hasProductRef = message.includes('đó') || message.includes('này') || message.includes('kia');
-    
-    if ((message.includes('mua') || message.includes('đặt') || message.includes('lấy')) && 
-        (hasQuantity || hasProductRef)) {
-      return { intent: 'order', confidence: 0.9 };
-    }
-    
-    // Product search intent - more keywords
-    if (message.includes('tìm') || message.includes('có') || message.includes('giá') || 
-        message.includes('bao nhiêu') || message.includes('còn') ||
-        message.includes('thức ăn') || message.includes('sản phẩm') ||
-        message.includes('cho chó') || message.includes('cho mèo') ||
-        message.includes('pate') || message.includes('cát') ||
-        message.includes('muốn xem') || message.includes('cần')) {
-      return { intent: 'product_search', confidence: 0.9 };
-    }
-    
-    // Stock check intent
-    if (message.includes('còn hàng') || message.includes('hết hàng') || message.includes('kho')) {
-      return { intent: 'stock_check', confidence: 0.8 };
-    }
-    
-    return { intent: 'general', confidence: 0.5 };
-  }
-
-  extractOrderDetails(userMessage, context) {
-    const message = userMessage.toLowerCase();
-    const orderItems = [];
-    
-    console.log('=== EXTRACT ORDER DETAILS ===');
-    console.log('User message:', userMessage);
-    console.log('Context products:', context.products);
-    
-    // Extract quantity
-    const quantityPatterns = [
-      /(\d+)\s*(hộp|bịch|gói|chai|lon|kg|g)/gi,
-      /một\s*(hộp|bịch|gói|chai|lon)/gi,
-      /hai\s*(hộp|bịch|gói|chai|lon)/gi,
-      /ba\s*(hộp|bịch|gói|chai|lon)/gi
-    ];
-    
-    let quantity = 1; // default
-    for (const pattern of quantityPatterns) {
-      const match = message.match(pattern);
-      if (match) {
-        const num = match[0].match(/\d+/);
-        if (num) {
-          quantity = parseInt(num[0]);
-        } else if (match[0].includes('một')) {
-          quantity = 1;
-        } else if (match[0].includes('hai')) {
-          quantity = 2;
-        } else if (match[0].includes('ba')) {
-          quantity = 3;
-        }
-        console.log('Extracted quantity:', quantity);
-        break;
-      }
-    }
-    
-    // Check if referring to displayed products
-    if ((message.includes('đó') || message.includes('này') || message.includes('kia') || 
-         message.includes('pate') || message.includes('cát') || message.includes('thức ăn')) && 
-        context.products && context.products.length > 0) {
-      
-      console.log('User is referring to displayed products');
-      
-      // Try to match which product
-      let productIndex = 0;
-      if (message.includes('thứ 2') || message.includes('thứ hai') || message.includes('cái 2')) {
-        productIndex = 1;
-      } else if (message.includes('thứ 3') || message.includes('thứ ba') || message.includes('cái 3')) {
-        productIndex = 2;
-      } else if (message.includes('cuối') || message.includes('sau')) {
-        productIndex = context.products.length - 1;
-      }
-      // Default: first product
-      
-      console.log('Selected product index:', productIndex);
-      
-      if (context.products[productIndex]) {
-        orderItems.push({
-          product: context.products[productIndex],
-          quantity: quantity
-        });
-        console.log('Added to order:', context.products[productIndex].name, 'x', quantity);
-      }
-    }
-    
-    console.log('Order items:', orderItems);
-    console.log('Has order:', orderItems.length > 0);
-    console.log('=== END EXTRACT ===');
-    
-    return {
-      items: orderItems,
-      hasOrder: orderItems.length > 0
-    };
-  }
-
-  async enrichContextWithProducts(userMessage) {
+  // ---------------------------------------------------------------------------
+  // Summarize conversation history for memory compression
+  // ---------------------------------------------------------------------------
+  async summarizeConversation(messages) {
     try {
-      // Extract potential product keywords
-      const keywords = this.extractKeywords(userMessage);
-      
-      // Detect quantity intent
-      const quantityIntent = this.detectQuantityIntent(userMessage);
-      const limit = quantityIntent.limit;
-      
-      console.log('Searching products with keywords:', keywords.join(' '));
-      console.log('Quantity intent:', quantityIntent);
+      const historyText = messages
+        .map((m) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
+        .join('\n');
 
-      // Search for products
-      const searchResults = await productClient.searchProducts(keywords.join(' '), limit);
-      
-      console.log('Product search results:', searchResults);
-      
-      if (searchResults.success && searchResults.data && searchResults.data.length > 0) {
-        console.log('Found products:', searchResults.data.length);
-        return {
-          products: searchResults.data,
-          quantityIntent: quantityIntent
-        };
-      }
+      const summaryPrompt = `Tóm tắt ngắn gọn cuộc hội thoại mua sắm thú cưng sau. Trích xuất:
+- Sở thích thú cưng (chó/mèo/khác)
+- Ngân sách / mức giá quan tâm
+- Sản phẩm user đã xem hoặc quan tâm
+- Yêu cầu đặc biệt (thương hiệu, chất liệu...)
+- Sản phẩm đã thêm vào giỏ hàng
 
-      console.log('No products found');
-      return { products: [], quantityIntent: quantityIntent };
-    } catch (error) {
-      console.error('Error enriching context:', error.message);
-      return { products: [], quantityIntent: { limit: 3, isSingle: false } };
+Lịch sử:
+${historyText}
+
+Tóm tắt (ngắn gọn, dưới 100 từ):`;
+
+      const completion = await this.groq.chat.completions.create({
+        messages: [{ role: 'user', content: summaryPrompt }],
+        model: this.model,
+        temperature: 0.1,
+        max_tokens: 200,
+        stream: false,
+      });
+
+      return completion.choices[0]?.message?.content || '';
+    } catch (err) {
+      console.error('[AIService] Summarize error:', err.message);
+      return '';
     }
   }
 
-  detectQuantityIntent(userMessage) {
-    const message = userMessage.toLowerCase();
-    
-    // Single product intent
-    if (message.includes('cho tôi 1') || 
-        message.includes('cho tôi một') ||
-        message.includes('1 sản phẩm') ||
-        message.includes('một sản phẩm') ||
-        message.includes('1 mặt hàng') ||
-        message.includes('một mặt hàng')) {
-      return { limit: 1, isSingle: true };
-    }
-    
-    // Multiple products intent
-    if (message.includes('các sản phẩm') || 
-        message.includes('nhiều sản phẩm') ||
-        message.includes('một số sản phẩm') ||
-        message.includes('vài sản phẩm')) {
-      return { limit: 3, isSingle: false };
-    }
-    
-    // Default: 3 products
-    return { limit: 3, isSingle: false };
+  // ---------------------------------------------------------------------------
+  // Clean leaked tool-call syntax from model response text
+  // Patterns seen in production:
+  //   <function=search_products>{"keywords":"..."}</function>
+  //   <function=check_inventory>69f1883f...</function>
+  //   <function>...</function>
+  //   ```json {...} ```
+  // ---------------------------------------------------------------------------
+  _cleanResponse(text) {
+    if (!text) return text;
+
+    let cleaned = text;
+
+    // Pattern 1: <function=NAME>CONTENT</function>  ← most common leak
+    cleaned = cleaned.replace(/<function=[\w_]+>[\s\S]*?<\/function>/gi, '');
+
+    // Pattern 2: <function>CONTENT</function>  ← older pattern
+    cleaned = cleaned.replace(/<function>[\s\S]*?<\/function>/gi, '');
+
+    // Pattern 3: <function=NAME /> self-closing
+    cleaned = cleaned.replace(/<function=[\w_]+\s*\/>/gi, '');
+
+    // Pattern 4: ```json {...} ``` blocks that look like tool calls
+    cleaned = cleaned.replace(/```json[\s\S]*?```/gi, '');
+
+    // Pattern 5: bare JSON objects with product_id / productId
+    cleaned = cleaned.replace(/\{[\s\S]*?"product[_]?[Ii]d"[\s\S]*?\}/gi, '');
+
+    // Pattern 6: [tool_name({...})]
+    cleaned = cleaned.replace(/\[[\w_]+\([\s\S]*?\)\]/g, '');
+
+    // Collapse multiple blank lines
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+    return cleaned || 'Xin lỗi, tôi không thể trả lời lúc này.';
   }
 
+  // Keep for backward compatibility
   extractKeywords(text) {
-    // Remove common Vietnamese stop words and extract meaningful keywords
     const stopWords = ['tôi', 'muốn', 'cần', 'cho', 'của', 'có', 'là', 'và', 'thì', 'được', 'các', 'về', 'một', 'số'];
-    const words = text.toLowerCase()
+    const words = text
+      .toLowerCase()
       .replace(/[^\w\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/g, '')
       .split(/\s+/)
-      .filter(word => word.length > 1 && !stopWords.includes(word));
-    
-    return [...new Set(words)]; // Remove duplicates
+      .filter((word) => word.length > 1 && !stopWords.includes(word));
+    return [...new Set(words)];
   }
 }
 

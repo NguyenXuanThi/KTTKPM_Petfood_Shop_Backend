@@ -14,6 +14,9 @@ const {
   couponServiceUrl,
   couponInternalKey,
   couponServiceTimeoutMs,
+  rewardServiceUrl,
+  rewardInternalKey,
+  rewardServiceTimeoutMs,
 } = require("../config/env");
 
 const createError = (message, statusCode = 400) => {
@@ -34,6 +37,14 @@ const normalizeCheckoutItem = (item) => ({
   imageUrl: item.imageUrl || "",
   quantity: Number(item.quantity),
   price: Number(item.priceAtAdd),
+});
+
+const normalizeDirectCheckoutItem = (item) => ({
+  productId: item.productId,
+  name: item.name,
+  imageUrl: item.imageUrl || "",
+  quantity: Number(item.quantity),
+  price: Number(item.price),
 });
 
 const calculateTotalAmount = (items) =>
@@ -378,6 +389,40 @@ const markCouponUsed = async ({
   }
 };
 
+const grantRewardSpinsIfEligible = async (order) => {
+  if (order.orderStatus !== "completed" || order.paymentStatus !== "paid") {
+    return null;
+  }
+
+  try {
+    const { data } = await axios.post(
+      `${rewardServiceUrl}/internal/rewards/grant-spins`,
+      {
+        userId: order.userId.toString(),
+        orderId: order._id.toString(),
+        paidAmount: order.totalAmount,
+      },
+      {
+        timeout: rewardServiceTimeoutMs,
+        headers: {
+          "x-internal-key": rewardInternalKey,
+        },
+      },
+    );
+
+    return data;
+  } catch (error) {
+    console.warn("[order-service] reward spin grant failed:", {
+      orderId: order._id.toString(),
+      status: error.response?.status,
+      data: error.response?.data,
+      code: error.code,
+      message: error.message,
+    });
+    return null;
+  }
+};
+
 const createOrder = async (userId, payload) => {
   ensureObjectId(userId, "Invalid user id");
   ensureObjectId(payload.addressId, "Invalid address id");
@@ -387,12 +432,17 @@ const createOrder = async (userId, payload) => {
     addressId: payload.addressId,
   });
 
-  const checkoutItems = await checkoutSelectedCartItems({
-    userId,
-    productIds: payload.selectedCartItemIds,
-  });
+  const isDirectBuy = Array.isArray(payload.directItems) && payload.directItems.length > 0;
+  const checkoutItems = isDirectBuy
+    ? payload.directItems
+    : await checkoutSelectedCartItems({
+        userId,
+        productIds: payload.selectedCartItemIds,
+      });
 
-  const items = checkoutItems.map(normalizeCheckoutItem);
+  const items = isDirectBuy
+    ? checkoutItems.map(normalizeDirectCheckoutItem)
+    : checkoutItems.map(normalizeCheckoutItem);
   const subtotal = calculateTotalAmount(items);
   const { shippingFee, shippingDiscount: autoShippingDiscount } = calculateShipping(subtotal);
   const couponResult = await validateCouponForOrder({
@@ -474,7 +524,9 @@ const createOrder = async (userId, payload) => {
       });
     }
 
-    await restoreCheckoutCartItems({ userId, items: checkoutItems });
+    if (!isDirectBuy) {
+      await restoreCheckoutCartItems({ userId, items: checkoutItems });
+    }
     throw error;
   }
 };
@@ -574,6 +626,7 @@ const markCompleted = async (orderId) => {
   order.orderStatus = "completed";
   order.completedAt = new Date();
   await order.save();
+  await grantRewardSpinsIfEligible(order);
   return order.toObject();
 };
 
@@ -638,6 +691,7 @@ const updateCodPaymentStatus = async (orderId, paymentStatus) => {
     });
   }
 
+  await grantRewardSpinsIfEligible(order);
   return order.toObject();
 };
 
@@ -764,7 +818,59 @@ const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
     });
   }
 
+  await grantRewardSpinsIfEligible(order);
   return order.toObject();
+};
+
+const checkReviewEligibility = async ({ userId, productId, orderId }) => {
+  ensureObjectId(userId, "Invalid user id");
+  ensureObjectId(productId, "Invalid product id");
+  ensureObjectId(orderId, "Invalid order id");
+
+  const order = await orderRepository.findById(orderId);
+
+  if (!order) {
+    return { eligible: false, reason: "Order not found" };
+  }
+
+  if (order.userId.toString() !== userId) {
+    return { eligible: false, reason: "Order does not belong to this user" };
+  }
+
+  if (order.orderStatus !== "completed") {
+    return {
+      eligible: false,
+      reason: "Only completed orders can be reviewed",
+    };
+  }
+
+  if (order.paymentStatus !== "paid") {
+    return {
+      eligible: false,
+      reason: "Only paid orders can be reviewed",
+    };
+  }
+
+  const orderItem = (order.items || []).find(
+    (item) => item.productId?.toString() === productId,
+  );
+
+  if (!orderItem) {
+    return {
+      eligible: false,
+      reason: "Product was not purchased in this order",
+    };
+  }
+
+  return {
+    eligible: true,
+    orderItem: {
+      productId: orderItem.productId,
+      name: orderItem.name,
+      quantity: orderItem.quantity,
+      price: orderItem.price,
+    },
+  };
 };
 
 module.exports = {
@@ -783,4 +889,5 @@ module.exports = {
   expireOverdueBankingOrders,
   updateCodPaymentStatus,
   updatePaymentStatusInternal,
+  checkReviewEligibility,
 };

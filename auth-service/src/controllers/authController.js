@@ -2,6 +2,8 @@ const {
   registerSchema,
   loginSchema,
   requestReactivationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } = require("../validators/authValidator");
 const authService = require("../services/authService");
 const { nodeEnv } = require("../config/env");
@@ -120,6 +122,36 @@ const requestReactivation = async (req, res, next) => {
   }
 };
 
+const forgotPassword = async (req, res, next) => {
+  try {
+    const payload = await forgotPasswordSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    const result = await authService.forgotPassword(payload);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const payload = await resetPasswordSchema.validateAsync(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    const result = await authService.resetPassword(payload);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -127,4 +159,6 @@ module.exports = {
   refresh,
   logout,
   requestReactivation,
+  forgotPassword,
+  resetPassword,
 };

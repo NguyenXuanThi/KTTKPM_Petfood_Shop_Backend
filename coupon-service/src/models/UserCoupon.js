@@ -35,6 +35,21 @@ const userCouponSchema = new mongoose.Schema(
       enum: ["admin", "system"],
       default: "admin",
     },
+    source: {
+      type: String,
+      enum: ["admin_gift", "birthday", "lucky_spin", "coin_exchange"],
+      default: "admin_gift",
+      index: true,
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     // Populated when redeemed — for order-service integration
     usedAt: {
       type: Date,

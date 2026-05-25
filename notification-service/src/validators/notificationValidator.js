@@ -19,7 +19,16 @@ const couponAssignedSchema = Joi.object({
   expiresAt: Joi.date().iso().required(),
 });
 
+const passwordResetOtpSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+  otp: Joi.string()
+    .trim()
+    .pattern(/^\d{6}$/)
+    .required(),
+});
+
 module.exports = {
   reactivationRequestSchema,
   couponAssignedSchema,
+  passwordResetOtpSchema,
 };

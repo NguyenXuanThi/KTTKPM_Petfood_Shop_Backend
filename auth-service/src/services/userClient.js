@@ -1,5 +1,9 @@
 const axios = require("axios");
-const { userServiceUrl, userServiceTimeoutMs } = require("../config/env");
+const {
+  userServiceUrl,
+  userServiceTimeoutMs,
+  userInternalKey,
+} = require("../config/env");
 
 const callUserService = async (config) => {
   try {
@@ -70,10 +74,22 @@ const markReactivationRequested = async (id) => {
   return data.user;
 };
 
+const resetPassword = async (id, newPassword) => {
+  const data = await callUserService({
+    method: "patch",
+    url: `${userServiceUrl}/users/${id}/password/reset`,
+    headers: userInternalKey ? { "x-internal-key": userInternalKey } : {},
+    data: { newPassword },
+  });
+
+  return data.user;
+};
+
 module.exports = {
   createUser,
   getUserByEmail,
   getUserById,
   markLastLogin,
   markReactivationRequested,
+  resetPassword,
 };

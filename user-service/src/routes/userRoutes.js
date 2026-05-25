@@ -92,6 +92,7 @@ router.post("/", userController.createUser);
 router.get("/email/:email", userController.getUserByEmail);
 router.get("/internal/:id", userController.getInternalUserById);
 router.patch("/:id/last-login", userController.markLastLogin);
+router.patch("/:id/password/reset", requireInternal, userController.resetPassword);
 router.patch(
   "/:id/reactivation-request",
   userController.markReactivationRequested,

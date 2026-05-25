@@ -29,6 +29,7 @@ module.exports = {
   corsOrigin: process.env.AUTH_CORS_ORIGIN || "*",
   userServiceUrl: process.env.USER_SERVICE_URL,
   userServiceTimeoutMs: Number(process.env.AUTH_USER_SERVICE_TIMEOUT_MS || 5000),
+  userInternalKey: process.env.AUTH_USER_INTERNAL_KEY || process.env.USER_INTERNAL_KEY || "",
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
   notificationServiceTimeoutMs: Number(
     process.env.AUTH_NOTIFICATION_SERVICE_TIMEOUT_MS || 5000,

@@ -23,6 +23,10 @@ const changePasswordSchema = Joi.object({
     .required(),
 });
 
+const resetPasswordSchema = Joi.object({
+  newPassword: Joi.string().min(6).max(128).required(),
+});
+
 const updateRoleSchema = Joi.object({
   role: Joi.string().valid("user", "admin", "support").required(),
 });
@@ -61,6 +65,7 @@ module.exports = {
   createUserSchema,
   updateProfileSchema,
   changePasswordSchema,
+  resetPasswordSchema,
   updateRoleSchema,
   updateStatusSchema,
   deactivateUserSchema,
