@@ -39,6 +39,14 @@ const normalizeCheckoutItem = (item) => ({
   price: Number(item.priceAtAdd),
 });
 
+const normalizeDirectCheckoutItem = (item) => ({
+  productId: item.productId,
+  name: item.name,
+  imageUrl: item.imageUrl || "",
+  quantity: Number(item.quantity),
+  price: Number(item.price),
+});
+
 const calculateTotalAmount = (items) =>
   items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -424,12 +432,17 @@ const createOrder = async (userId, payload) => {
     addressId: payload.addressId,
   });
 
-  const checkoutItems = await checkoutSelectedCartItems({
-    userId,
-    productIds: payload.selectedCartItemIds,
-  });
+  const isDirectBuy = Array.isArray(payload.directItems) && payload.directItems.length > 0;
+  const checkoutItems = isDirectBuy
+    ? payload.directItems
+    : await checkoutSelectedCartItems({
+        userId,
+        productIds: payload.selectedCartItemIds,
+      });
 
-  const items = checkoutItems.map(normalizeCheckoutItem);
+  const items = isDirectBuy
+    ? checkoutItems.map(normalizeDirectCheckoutItem)
+    : checkoutItems.map(normalizeCheckoutItem);
   const subtotal = calculateTotalAmount(items);
   const { shippingFee, shippingDiscount: autoShippingDiscount } = calculateShipping(subtotal);
   const couponResult = await validateCouponForOrder({
@@ -511,7 +524,9 @@ const createOrder = async (userId, payload) => {
       });
     }
 
-    await restoreCheckoutCartItems({ userId, items: checkoutItems });
+    if (!isDirectBuy) {
+      await restoreCheckoutCartItems({ userId, items: checkoutItems });
+    }
     throw error;
   }
 };

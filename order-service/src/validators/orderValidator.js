@@ -9,7 +9,19 @@ const createOrderSchema = Joi.object({
     .items(objectId.required())
     .min(1)
     .unique()
-    .required(),
+    .optional(),
+  directItems: Joi.array()
+    .items(
+      Joi.object({
+        productId: objectId.required(),
+        name: Joi.string().trim().min(1).max(255).required(),
+        price: Joi.number().min(0).required(),
+        imageUrl: Joi.string().trim().allow("").default(""),
+        quantity: Joi.number().integer().min(1).max(999).required(),
+      }),
+    )
+    .min(1)
+    .optional(),
   paymentMethod: Joi.string().valid("cash", "banking", "vnpay").required(),
   addressId: objectId.required(),
   couponCode: Joi.string()
@@ -20,7 +32,7 @@ const createOrderSchema = Joi.object({
     .allow("")
     .optional(),
   notes: Joi.string().trim().max(1000).allow("").optional(),
-});
+}).xor("selectedCartItemIds", "directItems");
 
 const listAdminOrdersQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
