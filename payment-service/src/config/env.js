@@ -25,10 +25,25 @@ module.exports = {
   corsOrigin: process.env.PAYMENT_CORS_ORIGIN || "*",
   jwtSecret: process.env.JWT_SECRET,
   orderServiceUrl: process.env.ORDER_SERVICE_URL,
-  orderServiceTimeoutMs: Number(process.env.PAYMENT_ORDER_SERVICE_TIMEOUT_MS || 5000),
+  orderServiceTimeoutMs: Number(
+    process.env.PAYMENT_ORDER_SERVICE_TIMEOUT_MS || 5000,
+  ),
   uploadServiceUrl: process.env.UPLOAD_SERVICE_URL,
-  uploadServiceTimeoutMs: Number(process.env.PAYMENT_UPLOAD_SERVICE_TIMEOUT_MS || 10000),
+  uploadServiceTimeoutMs: Number(
+    process.env.PAYMENT_UPLOAD_SERVICE_TIMEOUT_MS || 10000,
+  ),
   orderInternalKey: process.env.ORDER_INTERNAL_KEY,
   paymentInternalKey:
     process.env.PAYMENT_INTERNAL_KEY || process.env.ORDER_INTERNAL_KEY,
+
+  vnpay: {
+    tmnCode: process.env.VNPAY_TMN_CODE,
+    hashSecret: process.env.VNPAY_HASH_SECRET,
+    url:
+      process.env.VNPAY_URL ||
+      "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
+    returnUrl:
+      process.env.VNPAY_RETURN_URL ||
+      "http://localhost:5173/payment/vnpay-return",
+  },
 };

@@ -94,7 +94,8 @@ const fetchAddressSnapshot = async ({ userId, addressId }) => {
 
     if (error.response) {
       throw createError(
-        error.response.data?.message || "Failed to fetch address from user-service",
+        error.response.data?.message ||
+          "Failed to fetch address from user-service",
         error.response.status,
       );
     }
@@ -129,7 +130,8 @@ const checkoutSelectedCartItems = async ({ userId, productIds }) => {
 
     if (error.response) {
       throw createError(
-        error.response.data?.message || "Failed to checkout selected cart items",
+        error.response.data?.message ||
+          "Failed to checkout selected cart items",
         error.response.status,
       );
     }
@@ -247,6 +249,42 @@ const initBankingPayment = async ({ orderId, userId, amount }) => {
   }
 };
 
+const initVnpayPayment = async ({ orderId, userId, amount, ipAddr }) => {
+  try {
+    const { data } = await axios.post(
+      `${paymentServiceUrl}/api/payments/vnpay/init`,
+      { orderId, userId, amount, ipAddr },
+      {
+        timeout: paymentServiceTimeoutMs,
+        headers: {
+          "x-internal-key": paymentInternalKey,
+        },
+      },
+    );
+
+    return { payment: data.payment, paymentUrl: data.paymentUrl };
+  } catch (error) {
+    console.error("[order-service] initVnpayPayment failed:", {
+      url: `${paymentServiceUrl}/api/payments/vnpay/init`,
+      orderId,
+      userId,
+      status: error.response?.status,
+      data: error.response?.data,
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.response) {
+      throw createError(
+        error.response.data?.message || "Failed to initialize VNPay payment",
+        error.response.status,
+      );
+    }
+
+    throw createError("payment-service is unavailable", 502);
+  }
+};
+
 const failBankingPayment = async ({ orderId, rejectedReason }) => {
   try {
     await axios.patch(
@@ -313,7 +351,12 @@ const expireBankingPayment = async ({ orderId }) => {
   }
 };
 
-const validateCouponForOrder = async ({ userId, couponCode, orderAmount, shippingFee }) => {
+const validateCouponForOrder = async ({
+  userId,
+  couponCode,
+  orderAmount,
+  shippingFee,
+}) => {
   if (!couponCode) {
     return {
       couponCode: "",
@@ -347,7 +390,10 @@ const validateCouponForOrder = async ({ userId, couponCode, orderAmount, shippin
   } catch (error) {
     if (error.statusCode) throw error;
     if (error.response) {
-      throw createError(error.response.data?.message || "Failed to validate coupon", error.response.status);
+      throw createError(
+        error.response.data?.message || "Failed to validate coupon",
+        error.response.status,
+      );
     }
     throw createError("coupon-service is unavailable", 502);
   }
@@ -383,7 +429,10 @@ const markCouponUsed = async ({
     );
   } catch (error) {
     if (error.response) {
-      throw createError(error.response.data?.message || "Failed to mark coupon as used", error.response.status);
+      throw createError(
+        error.response.data?.message || "Failed to mark coupon as used",
+        error.response.status,
+      );
     }
     throw createError("coupon-service is unavailable", 502);
   }
@@ -432,7 +481,8 @@ const createOrder = async (userId, payload) => {
     addressId: payload.addressId,
   });
 
-  const isDirectBuy = Array.isArray(payload.directItems) && payload.directItems.length > 0;
+  const isDirectBuy =
+    Array.isArray(payload.directItems) && payload.directItems.length > 0;
   const checkoutItems = isDirectBuy
     ? payload.directItems
     : await checkoutSelectedCartItems({
@@ -444,7 +494,8 @@ const createOrder = async (userId, payload) => {
     ? checkoutItems.map(normalizeDirectCheckoutItem)
     : checkoutItems.map(normalizeCheckoutItem);
   const subtotal = calculateTotalAmount(items);
-  const { shippingFee, shippingDiscount: autoShippingDiscount } = calculateShipping(subtotal);
+  const { shippingFee, shippingDiscount: autoShippingDiscount } =
+    calculateShipping(subtotal);
   const couponResult = await validateCouponForOrder({
     userId,
     couponCode: payload.couponCode,
@@ -460,7 +511,10 @@ const createOrder = async (userId, payload) => {
     Math.max(0, shippingFee - autoShippingDiscount),
     couponResult.couponShippingDiscount,
   );
-  const totalAmount = Math.max(0, subtotal + shippingFee - shippingDiscount - couponDiscount);
+  const totalAmount = Math.max(
+    0,
+    subtotal + shippingFee - shippingDiscount - couponDiscount,
+  );
   const paymentStatus = payload.paymentMethod === "cash" ? "unpaid" : "pending";
   let order;
 
@@ -479,7 +533,11 @@ const createOrder = async (userId, payload) => {
       paymentStatus,
       orderStatus: "pending",
       shippingAddress,
-      expiresAt: payload.paymentMethod === "banking" ? bankingExpiryDate() : null,
+      // expiresAt:
+      //   payload.paymentMethod === "banking" ? bankingExpiryDate() : null,
+      expiresAt: ["banking", "vnpay"].includes(payload.paymentMethod)
+        ? bankingExpiryDate()
+        : null,
       notes: payload.notes || "",
     });
 
@@ -496,6 +554,22 @@ const createOrder = async (userId, payload) => {
         order: orderPayload,
         payment,
         nextAction: "UPLOAD_BANKING_PROOF",
+      };
+    }
+
+    if (payload.paymentMethod === "vnpay") {
+      const { payment, paymentUrl } = await initVnpayPayment({
+        orderId: order._id.toString(),
+        userId,
+        amount: totalAmount,
+        ipAddr: payload.ipAddr || "127.0.0.1",
+      });
+
+      return {
+        order: orderPayload,
+        payment,
+        paymentUrl,
+        nextAction: "REDIRECT_VNPAY",
       };
     }
 
@@ -520,7 +594,10 @@ const createOrder = async (userId, payload) => {
         ? `${order.notes}\nSystem cancellation: checkout/payment initialization failed`
         : "System cancellation: checkout/payment initialization failed";
       await order.save().catch((saveError) => {
-        console.warn("[order-service] failed to cancel incomplete order:", saveError.message);
+        console.warn(
+          "[order-service] failed to cancel incomplete order:",
+          saveError.message,
+        );
       });
     }
 
@@ -550,7 +627,11 @@ const getOrderById = async (orderId, auth) => {
 };
 
 const listAdminOrders = async ({ page, limit, orderStatus }) => {
-  const [orders, total] = await orderRepository.findAll({ page, limit, orderStatus });
+  const [orders, total] = await orderRepository.findAll({
+    page,
+    limit,
+    orderStatus,
+  });
   return {
     orders,
     meta: {
@@ -577,7 +658,10 @@ const confirmOrder = async (orderId) => {
   }
 
   if (order.paymentMethod === "banking" && order.paymentStatus !== "paid") {
-    throw createError("Banking payment must be approved before confirming order", 400);
+    throw createError(
+      "Banking payment must be approved before confirming order",
+      400,
+    );
   }
 
   order.orderStatus = "confirmed";
@@ -637,7 +721,10 @@ const cancelOrder = async (orderId, reason = "") => {
   }
 
   if (order.estimatedDeliveryAt) {
-    throw createError("Order cannot be cancelled after delivery time has been set", 400);
+    throw createError(
+      "Order cannot be cancelled after delivery time has been set",
+      400,
+    );
   }
 
   if (order.paymentMethod === "banking" && order.paymentStatus !== "paid") {
@@ -654,7 +741,9 @@ const cancelOrder = async (orderId, reason = "") => {
   order.cancelledAt = new Date();
   order.cancelledReason = reason || "Order cancelled by admin";
   if (reason) {
-    order.notes = order.notes ? `${order.notes}\nCancel reason: ${reason}` : `Cancel reason: ${reason}`;
+    order.notes = order.notes
+      ? `${order.notes}\nCancel reason: ${reason}`
+      : `Cancel reason: ${reason}`;
   }
   await order.save();
   return order.toObject();
@@ -687,7 +776,8 @@ const updateCodPaymentStatus = async (orderId, paymentStatus) => {
       orderId: order._id.toString(),
       orderAmount: order.subtotal,
       shippingFee: Math.max(0, order.shippingFee - autoShippingDiscount),
-      discountAmount: order.couponDiscount + (order.couponShippingDiscount || 0),
+      discountAmount:
+        order.couponDiscount + (order.couponShippingDiscount || 0),
     });
   }
 
@@ -709,7 +799,10 @@ const cancelMyBankingOrder = async ({ orderId, userId, reason = "" }) => {
   }
 
   if (order.orderStatus !== "pending") {
-    throw createError("Only pending banking orders can be cancelled by user", 400);
+    throw createError(
+      "Only pending banking orders can be cancelled by user",
+      400,
+    );
   }
 
   if (!["pending", "waiting_verify", "failed"].includes(order.paymentStatus)) {
@@ -723,7 +816,9 @@ const cancelMyBankingOrder = async ({ orderId, userId, reason = "" }) => {
   order.cancelledAt = new Date();
   order.cancelledReason = reason || "Order cancelled by user";
   if (reason) {
-    order.notes = order.notes ? `${order.notes}\nCancel reason: ${reason}` : `Cancel reason: ${reason}`;
+    order.notes = order.notes
+      ? `${order.notes}\nCancel reason: ${reason}`
+      : `Cancel reason: ${reason}`;
   }
 
   await failBankingPayment({
@@ -746,7 +841,11 @@ const expireBankingOrder = async (orderId) => {
     throw createError("Paid banking order cannot be expired", 400);
   }
 
-  if (["confirmed", "shipping", "delivered", "completed"].includes(order.orderStatus)) {
+  if (
+    ["confirmed", "shipping", "delivered", "completed"].includes(
+      order.orderStatus,
+    )
+  ) {
     throw createError("Active delivery order cannot be expired", 400);
   }
 
@@ -774,7 +873,11 @@ const expireOverdueBankingOrders = async () => {
   for (const order of orders) {
     try {
       const expiredOrder = await expireBankingOrder(order._id.toString());
-      results.push({ orderId: order._id.toString(), success: true, order: expiredOrder });
+      results.push({
+        orderId: order._id.toString(),
+        success: true,
+        order: expiredOrder,
+      });
     } catch (error) {
       console.error("[order-service] expire overdue banking order failed:", {
         orderId: order._id.toString(),
@@ -795,8 +898,16 @@ const expireOverdueBankingOrders = async () => {
 const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
   const order = await getOrderForUpdate(orderId);
 
-  if (order.paymentMethod !== "banking") {
-    throw createError("Internal payment status update is for banking orders", 400);
+  // if (order.paymentMethod !== "banking") {
+  //   throw createError(
+  //     "Internal payment status update is for banking orders",
+  //     400,
+  //   );
+  if (!["banking", "vnpay"].includes(order.paymentMethod)) {
+    throw createError(
+      "Internal payment status update is for banking/vnpay orders",
+      400,
+    );
   }
 
   order.paymentStatus = paymentStatus;
@@ -814,7 +925,8 @@ const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
       orderId: order._id.toString(),
       orderAmount: order.subtotal,
       shippingFee: Math.max(0, order.shippingFee - autoShippingDiscount),
-      discountAmount: order.couponDiscount + (order.couponShippingDiscount || 0),
+      discountAmount:
+        order.couponDiscount + (order.couponShippingDiscount || 0),
     });
   }
 

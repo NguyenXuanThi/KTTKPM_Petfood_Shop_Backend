@@ -9,7 +9,7 @@ const ORDER_STATUSES = [
   "cancelled",
 ];
 
-const PAYMENT_METHODS = ["cash", "banking"];
+const PAYMENT_METHODS = ["cash", "banking", "vnpay"];
 const PAYMENT_STATUSES = [
   "unpaid",
   "pending",

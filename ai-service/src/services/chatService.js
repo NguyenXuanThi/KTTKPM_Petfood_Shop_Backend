@@ -10,12 +10,12 @@ class ChatService {
   // ---------------------------------------------------------------------------
   // Create a new conversation session
   // ---------------------------------------------------------------------------
-  async createConversation(userId) {
+  async createConversation(userId, sessionId = null) {
     try {
-      const sessionId = uuidv4();
+      const resolvedSessionId = sessionId || uuidv4();
       const conversation = new Conversation({
         userId,
-        sessionId,
+        sessionId: resolvedSessionId,
         messages: [],
         context: {},
         status: 'active',
@@ -79,7 +79,7 @@ class ChatService {
       // Get or create conversation
       let conversationResult = await this.getConversation(sessionId);
       if (!conversationResult.success) {
-        conversationResult = await this.createConversation(userId);
+        conversationResult = await this.createConversation(userId, sessionId);
         if (!conversationResult.success) throw new Error('Failed to create conversation');
       }
 
@@ -93,7 +93,11 @@ class ChatService {
       });
 
       // Work on a mutable copy of context
-      let context = { ...(conversation.context || {}) };
+      let context = {
+        ...(conversation.context || {}),
+        userId,
+        sessionId,
+      };
 
       // ── Call AI with Function Calling ─────────────────────────────────────
       const aiResponse = await aiService.chat(conversation.messages, context);
@@ -113,7 +117,19 @@ class ChatService {
         context.pendingCheckout = false; // set true when user explicitly confirms
       }
 
-      const products = context.products || [];
+      // Chỉ gửi sản phẩm về client khi lượt này thực sự gọi search_products
+      const products =
+        aiResponse.toolsUsed.includes('search_products')
+          ? (context.products || []).slice(0, 3)
+          : [];
+
+      // Xóa sản phẩm cũ khỏi context khi chuyển sang luồng đặt lịch / FAQ
+      if (
+        aiResponse.toolsUsed.includes('check_available_slots') ||
+        aiResponse.toolsUsed.includes('book_appointment')
+      ) {
+        context.products = [];
+      }
 
       // ── Push assistant message ────────────────────────────────────────────
       conversation.messages.push({
@@ -123,7 +139,7 @@ class ChatService {
         metadata: {
           intent,
           toolsUsed: aiResponse.toolsUsed,
-          products: products.length > 0 ? products.slice(0, 3) : undefined,
+          products: products.length > 0 ? products : undefined,
         },
       });
 
@@ -140,10 +156,11 @@ class ChatService {
         success: true,
         data: {
           message: aiResponse.message,
+          assistantMessage: aiResponse.message,
           intent,
           sessionId: conversation.sessionId,
-          products: products.length > 0 ? products.slice(0, 3) : undefined,
-          cart: context.cart,
+          products,
+          cart: context.cart || [],
           showCheckoutButton: context.pendingCheckout === true,
           context,
         },

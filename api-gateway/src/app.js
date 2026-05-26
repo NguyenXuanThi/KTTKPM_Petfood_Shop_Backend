@@ -136,6 +136,7 @@ app.get("/api/health", (req, res) => {
       adminPayments: "/api/admin/payments/*",
       adminReviews: "/api/admin/reviews/*",
       adminRewards: "/api/admin/rewards/*",
+      appointments: "/api/appointments/*",
     },
   });
 });
@@ -169,6 +170,7 @@ app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/admin/reviews", requireAuth, requireAdmin, adminReviewProxy);
 app.use("/api/admin/rewards", requireAuth, requireAdmin, adminRewardProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
+app.use("/api/appointments", appointmentProxy);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

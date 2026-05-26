@@ -1,6 +1,12 @@
 const Groq = require('groq-sdk');
 const config = require('../config/env');
 const productClient = require('./productClient');
+const {
+  appointmentClient,
+  normalizeSlot,
+  normalizePhone,
+  mapPetType,
+} = require('./appointmentClient');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Groq Function Calling Tool Definitions
@@ -11,16 +17,14 @@ const TOOLS = [
     function: {
       name: 'search_products',
       description:
-        'Tim kiem san pham thuc an thu cung theo tu khoa. ' +
-        'QUY TAC BAT BUOC: chi dung MOT tu ngan nhat co the. ' +
-        'Dung: "cho" (khong phai "thuc an cho cho"), "meo", "pate", "hat", "cat", "xuong", "snack". ' +
-        'Neu user hoi ve san pham cu the, hay search truoc de lay danh sach roi moi dung ID that.',
+        'Tìm kiếm sản phẩm thức ăn thú cưng theo từ khóa. QUY TẮC BẮT BUỘC: 1. Chỉ dùng MỘT từ ngắn nhất có thể. 2. TUYỆT ĐỐI giữ nguyên chính tả tiếng Việt và dấu câu của người dùng. KHÔNG ĐƯỢC tự ý sửa dấu hoặc viết sai chính tả (Ví dụ: khách gõ \'vòng cổ\' thì keyword phải là \'vòng cổ\', tuyệt đối không trả về \'vông cộ\'). Nếu user hỏi về sản phẩm cụ thể, hãy search trước để lấy danh sách rồi mới dùng ID thật.',
       parameters: {
         type: 'object',
         properties: {
           keywords: {
             type: 'string',
-            description: 'MOT tu ngan nhat. Vi du: "cho", "meo", "pate", "cat", "hat", "royal canin"',
+            description:
+              'MỘT từ ngắn nhất trích xuất từ câu của khách. Bắt buộc giữ nguyên 100% dấu tiếng Việt. Ví dụ: \'chó\', \'mèo\', \'pate\', \'vòng cổ\', \'hạt\'.',
           },
           limit: {
             type: 'integer',
@@ -74,6 +78,67 @@ const TOOLS = [
           },
         },
         required: ['productId', 'quantity'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'check_available_slots',
+      description:
+        'Kiểm tra các khung giờ còn trống trong một ngày cụ thể. Hãy gọi tool này NGAY LẬP TỨC khi khách hàng đề cập đến ngày muốn đặt lịch, để báo cho họ biết giờ nào còn trống.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: {
+            type: 'string',
+            description: 'Ngày cần kiểm tra, định dạng YYYY-MM-DD (ví dụ: 2026-05-26).',
+          },
+        },
+        required: ['date'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'book_appointment',
+      description:
+        'Lưu lịch hẹn chính thức vào hệ thống. TUYỆT ĐỐI CHỈ GỌI tool này khi khách hàng đã xác nhận và cung cấp ĐẦY ĐỦ các thông tin bắt buộc. KHÔNG được tự bịa thông tin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customerName: {
+            type: 'string',
+            description: 'Tên khách hàng.',
+          },
+          phone: {
+            type: 'string',
+            description: 'Số điện thoại liên hệ.',
+          },
+          petName: {
+            type: 'string',
+            description: 'Tên thú cưng.',
+          },
+          petType: {
+            type: 'string',
+            description: 'Loài thú cưng (Ví dụ: Chó, Mèo, Hamster).',
+          },
+          date: {
+            type: 'string',
+            description: 'Ngày hẹn, định dạng YYYY-MM-DD.',
+          },
+          time: {
+            type: 'string',
+            description: 'Giờ hẹn chính xác đã chốt (Ví dụ: 09:00).',
+          },
+          services: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Danh sách các dịch vụ khách chọn (Ví dụ: ["Tắm rửa", "Cắt tỉa lông"]).',
+          },
+        },
+        required: ['customerName', 'phone', 'petName', 'petType', 'date', 'time', 'services'],
       },
     },
   },
@@ -177,6 +242,136 @@ class AIService {
           } else {
             result = { success: false, message: 'Không tìm thấy sản phẩm trong danh sách hiện tại để thêm vào giỏ' };
           }
+          break;
+        }
+
+        // ── check_available_slots (appointment-service) ─────────────────────
+        case 'check_available_slots': {
+          contextUpdates.products = [];
+          const { date } = toolArgs;
+          if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            result = {
+              success: false,
+              message: 'Ngày không hợp lệ. Dùng định dạng YYYY-MM-DD.',
+            };
+            break;
+          }
+          const slotsResult = await appointmentClient.getSlotsForDate(date);
+          if (!slotsResult.success) {
+            result = {
+              success: false,
+              message: slotsResult.message || 'Không kiểm tra được lịch trống. Thử lại sau.',
+            };
+            break;
+          }
+          const { availableSlots } = slotsResult;
+          contextUpdates.appointmentDraft = {
+            ...(context.appointmentDraft || {}),
+            date,
+            availableSlots,
+          };
+          result = {
+            success: true,
+            date,
+            availableSlots,
+            message: availableSlots.length
+              ? `Ngày ${date} còn các khung giờ: ${availableSlots.join(', ')}`
+              : `Ngày ${date} đã hết chỗ. Vui lòng chọn ngày khác.`,
+          };
+          break;
+        }
+
+        // ── book_appointment (lưu vào appointment-service) ───────────────────
+        case 'book_appointment': {
+          contextUpdates.products = [];
+          const {
+            customerName,
+            phone,
+            petName,
+            petType,
+            date,
+            time,
+            services,
+          } = toolArgs;
+
+          const missing = [];
+          if (!customerName?.trim()) missing.push('customerName');
+          if (!phone?.trim()) missing.push('phone');
+          if (!petName?.trim()) missing.push('petName');
+          if (!petType?.trim()) missing.push('petType');
+          if (!date?.trim()) missing.push('date');
+          if (!time?.trim()) missing.push('time');
+          if (!Array.isArray(services) || services.length === 0) missing.push('services');
+
+          if (missing.length > 0) {
+            result = {
+              success: false,
+              message: `Thiếu thông tin bắt buộc: ${missing.join(', ')}. Hãy hỏi khách bổ sung, không tự điền.`,
+            };
+            break;
+          }
+
+          const appointmentSlot = normalizeSlot(time);
+          if (!appointmentSlot) {
+            result = {
+              success: false,
+              message: 'Giờ hẹn không hợp lệ. Dùng định dạng HH:mm (ví dụ: 08:30).',
+            };
+            break;
+          }
+
+          const customerPhone = normalizePhone(phone);
+          const customerId =
+            context.userId && context.userId !== 'guest'
+              ? String(context.userId)
+              : `ai_chat_${context.sessionId || Date.now()}`;
+
+          const createResult = await appointmentClient.createAppointment({
+            customerId,
+            customerName: customerName.trim(),
+            customerPhone,
+            petName: petName.trim(),
+            petType: mapPetType(petType),
+            serviceType: services.map((s) => String(s).trim()).filter(Boolean).join(', '),
+            appointmentDate: date.trim(),
+            appointmentSlot,
+          });
+
+          if (!createResult.success) {
+            result = {
+              success: false,
+              message:
+                createResult.message ||
+                'Không lưu được lịch hẹn. Kiểm tra lại giờ/ngày hoặc thử khung giờ khác.',
+            };
+            break;
+          }
+
+          const saved = createResult.data;
+          const appointmentId = createResult.appointmentId;
+          const appointment = {
+            appointmentId,
+            mongoId: saved._id,
+            customerName: saved.customerName,
+            phone: saved.customerPhone,
+            petName: saved.petName,
+            petType: saved.petType,
+            date: saved.appointmentDate,
+            time: saved.appointmentSlot,
+            services: services.map((s) => String(s).trim()).filter(Boolean),
+            status: saved.status,
+            createdAt: saved.createdAt,
+          };
+
+          contextUpdates.appointment = appointment;
+          contextUpdates.appointmentDraft = null;
+
+          result = {
+            success: true,
+            appointmentId,
+            appointment,
+            message: `Đặt lịch thành công. Mã xác nhận: ${appointmentId}`,
+          };
           break;
         }
 
@@ -347,6 +542,9 @@ class AIService {
   // Build system prompt — uses summary + products/cart context
   // ---------------------------------------------------------------------------
   buildSystemPrompt(context = {}) {
+    const now = new Date();
+    const todayLabel = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+
     let prompt = `Bạn là trợ lý AI của PawMart - cửa hàng thú cưng cao cấp.
 
 **Nguyên tắc trả lời:**
@@ -357,10 +555,21 @@ class AIService {
   * Nếu đã có sản phẩm trong SẢN PHẨM ĐANG HIỂN THỊ → dùng add_to_cart_context với _id đó
   * Nếu CHƯA có sản phẩm → dùng search_products TRƯỚC, rồi mới add_to_cart_context
   * TUYỆT ĐỐI KHÔNG tự đặt productId — chỉ dùng _id lấy từ kết quả search_products
+- Khi khách muốn đặt lịch spa/thăm khám → dùng check_available_slots và book_appointment
+
+**LỄ TÂN ẢO (ĐẶT LỊCH HẸN):**
+- TRẠNG THÁI HIỆN TẠI: Hôm nay là ngày ${todayLabel}. Bắt buộc dùng ngày này làm mốc khi khách nói 'ngày mai', 'hôm kia', v.v. Khi gọi book_appointment, truyền date dạng YYYY-MM-DD và time dạng HH:mm (ví dụ 08:30).
+- VAI TRÒ LỄ TÂN: Khi khách muốn đặt lịch, hãy hướng dẫn họ từng bước.
+- QUY TRÌNH:
+  1. Hỏi ngày giờ khách muốn.
+  2. Gọi tool check_available_slots để báo giờ rảnh.
+  3. Khi chốt được giờ, nhẹ nhàng hỏi các thông tin còn thiếu (Tên, SĐT, Tên/Loài thú cưng, Dịch vụ). Hỏi 1-2 thông tin mỗi lần, KHÔNG hỏi dồn dập 5 câu cùng lúc.
+  4. Khi đã đủ thông tin, gọi tool book_appointment và thông báo đặt lịch thành công kèm mã xác nhận.
 
 **QUY TẮC QUAN TRỌNG:**
 - Không bao giờ hiển thị raw JSON, function call, hay code trong câu trả lời
 - Chỉ trả lời bằng ngôn ngữ tự nhiên tiếng Việt
+- Khi trích xuất từ khóa để gọi function, BẮT BUỘC phải giữ nguyên chính tả và dấu tiếng Việt gốc của người dùng.
 
 `;
 
@@ -385,6 +594,25 @@ class AIService {
         prompt += `${index + 1}. [_id: ${product._id}] ${product.name} - ${product.price?.toLocaleString('vi-VN')}đ (Còn ${product.stock} sản phẩm)\n`;
       });
       prompt += `\nKhi user nói "mua cái đó", "mua 2 túi", "thêm vào giỏ" → dùng add_to_cart_context với _id ở trên.\n\n`;
+    }
+
+    if (context.appointmentDraft?.date) {
+      prompt += `**ĐANG ĐẶT LỊCH (nháp):**\n`;
+      prompt += `- Ngày đã chọn: ${context.appointmentDraft.date}\n`;
+      if (context.appointmentDraft.availableSlots?.length) {
+        prompt += `- Giờ trống đã kiểm tra: ${context.appointmentDraft.availableSlots.join(', ')}\n`;
+      }
+      prompt += `\n`;
+    }
+
+    if (context.appointment?.appointmentId) {
+      const apt = context.appointment;
+      prompt += `**LỊCH HẸN ĐÃ CHỐT:**\n`;
+      prompt += `- Mã: ${apt.appointmentId}\n`;
+      prompt += `- Khách: ${apt.customerName} (${apt.phone})\n`;
+      prompt += `- Thú cưng: ${apt.petName} (${apt.petType})\n`;
+      prompt += `- Thời gian: ${apt.date} lúc ${apt.time}\n`;
+      prompt += `- Dịch vụ: ${(apt.services || []).join(', ')}\n\n`;
     }
 
     return prompt;

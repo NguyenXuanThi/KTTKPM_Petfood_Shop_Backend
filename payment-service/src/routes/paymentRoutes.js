@@ -1,5 +1,6 @@
 const express = require("express");
 const paymentController = require("../controllers/paymentController");
+const vnpayController = require("../controllers/vnpayController");
 const statisticsController = require("../controllers/statisticsController");
 const {
   requireUserAuth,
@@ -33,6 +34,24 @@ router.patch(
   "/payments/banking/order/:orderId/expire",
   requireInternal,
   paymentController.expireBankingPaymentByOrder,
+);
+
+router.post(
+  "/payments/vnpay/init",
+  requireInternal,
+  vnpayController.initVnpayPayment,
+);
+
+router.post(
+  "/payments/vnpay/create",
+  requireUserAuth,
+  vnpayController.createVnpayPayment,
+);
+
+router.get(
+  "/payments/vnpay/verify",
+  requireUserAuth,
+  vnpayController.verifyVnpayReturn,
 );
 
 router.post(

@@ -27,10 +27,24 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+/** Comma-separated origins → array; single origin stays a string; "*" unchanged. */
+function parseCorsOrigin(value) {
+  const raw = (value || "http://localhost:5173").trim();
+  if (raw === "*") return "*";
+  if (raw.includes(",")) {
+    return raw
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+  return raw;
+}
+
 module.exports = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.API_GATEWAY_PORT || 3000),
-  corsOrigin: process.env.API_GATEWAY_CORS_ORIGIN || "http://localhost:5173",
+  // corsOrigin: process.env.API_GATEWAY_CORS_ORIGIN || "http://localhost:5173",
+  corsOrigin: parseCorsOrigin(process.env.API_GATEWAY_CORS_ORIGIN),
   jwtSecret: process.env.JWT_SECRET,
 
   authServiceUrl: process.env.AUTH_SERVICE_URL,

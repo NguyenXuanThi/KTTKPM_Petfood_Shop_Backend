@@ -40,6 +40,8 @@ server.listen(PORT, () => {
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`❌ Port ${PORT} is already in use.`);
+    console.error('   Chạy: npm run free-port   hoặc   npm run dev (tự giải phóng port trước khi start).');
+    console.error('   Hoặc đổi port trong .env: AI_PORT=3016');
     process.exit(1);
   }
   console.error('Server error:', err);

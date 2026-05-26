@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', service: 'AI Chat Service', timestamp: new Date().toISOString() });
+  res.json({ status: 'OK', service: 'AI Service', timestamp: new Date().toISOString() });
 });
 
 app.use((req, res) => {
