@@ -2,6 +2,8 @@ const axios = require("axios");
 const Coupon = require("../models/Coupon");
 const UserCoupon = require("../models/UserCoupon");
 const { getJson, setJson, deleteByPattern } = require("../config/redis");
+const TOPICS = require("../events/topics");
+const { publishEvent } = require("../events/kafkaProducer");
 const {
   userServiceUrl,
   userServiceTimeoutMs,
@@ -361,6 +363,23 @@ const assignCoupon = async ({ couponId, userId }) => {
   }
 
   await invalidateCouponCache();
+  const couponPublish = await publishEvent(TOPICS.COUPON_ASSIGNED, {
+    data: {
+      userId: userId.toString(),
+      couponId: couponId.toString(),
+      userCouponId: userCoupon._id.toString(),
+      source: userCoupon.source,
+      assignedBy: userCoupon.assignedBy,
+      assignedAt: userCoupon.assignedAt,
+    },
+  });
+  if (couponPublish.published) {
+    console.log(
+      `[coupon-service] Published coupon.assigned eventId=${couponPublish.event.eventId} userId=${userId} couponId=${couponId} source=${userCoupon.source}`,
+    );
+  } else {
+    console.warn("[coupon-service] Kafka unavailable, skipped coupon.assigned publish");
+  }
   return userCoupon;
 };
 
@@ -399,6 +418,23 @@ const assignCouponInternal = async ({
   );
 
   await invalidateCouponCache();
+  const couponPublish = await publishEvent(TOPICS.COUPON_ASSIGNED, {
+    data: {
+      userId: userId.toString(),
+      couponId: couponId.toString(),
+      userCouponId: userCoupon._id.toString(),
+      source: userCoupon.source,
+      assignedBy: userCoupon.assignedBy,
+      assignedAt: userCoupon.assignedAt,
+    },
+  });
+  if (couponPublish.published) {
+    console.log(
+      `[coupon-service] Published coupon.assigned eventId=${couponPublish.event.eventId} userId=${userId} couponId=${couponId} source=${userCoupon.source}`,
+    );
+  } else {
+    console.warn("[coupon-service] Kafka unavailable, skipped coupon.assigned publish");
+  }
   return userCoupon;
 };
 

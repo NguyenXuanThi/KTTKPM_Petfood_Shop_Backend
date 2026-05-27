@@ -9,6 +9,8 @@ const {
   uploadServiceTimeoutMs,
   orderInternalKey,
 } = require("../config/env");
+const TOPICS = require("../events/topics");
+const { publishEvent } = require("../events/kafkaProducer");
 
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
@@ -230,6 +232,23 @@ const approvePayment = async ({ paymentId, adminId }) => {
   await payment.save();
 
   await syncOrderPaymentStatus({ orderId: payment.orderId, paymentStatus: "paid" });
+  const paidPublish = await publishEvent(TOPICS.PAYMENT_PAID, {
+    data: {
+      paymentId: payment._id.toString(),
+      orderId: payment.orderId.toString(),
+      userId: payment.userId.toString(),
+      amount: payment.amount,
+      paymentMethod: payment.paymentMethod,
+      paidAt: payment.verifiedAt || new Date(),
+    },
+  });
+  if (paidPublish.published) {
+    console.log(
+      `[payment-service] Published payment.paid eventId=${paidPublish.event.eventId} orderId=${payment.orderId} userId=${payment.userId} amount=${payment.amount}`,
+    );
+  } else {
+    console.warn("[payment-service] Kafka unavailable, skipped payment.paid publish");
+  }
 
   return payment.toObject();
 };
@@ -258,6 +277,24 @@ const rejectPayment = async ({ paymentId, adminId, rejectedReason }) => {
   await payment.save();
 
   await syncOrderPaymentStatus({ orderId: payment.orderId, paymentStatus: "failed" });
+  const failedPublish = await publishEvent(TOPICS.PAYMENT_FAILED, {
+    data: {
+      paymentId: payment._id.toString(),
+      orderId: payment.orderId.toString(),
+      userId: payment.userId.toString(),
+      amount: payment.amount,
+      paymentMethod: payment.paymentMethod,
+      failedAt: payment.verifiedAt || new Date(),
+      rejectedReason,
+    },
+  });
+  if (failedPublish.published) {
+    console.log(
+      `[payment-service] Published payment.failed eventId=${failedPublish.event.eventId} orderId=${payment.orderId} reason=${rejectedReason}`,
+    );
+  } else {
+    console.warn("[payment-service] Kafka unavailable, skipped payment.failed publish");
+  }
 
   return payment.toObject();
 };

@@ -1,5 +1,6 @@
-const { getKafka } = require('../config/kafkaClient');
+﻿const { getKafka } = require('../config/kafkaClient');
 const { pendingRequests } = require('./productKafkaProducer');
+const { ensureTopics } = require('../events/kafkaAdmin');
 
 /**
  * Kafka Consumer for ai-service.
@@ -7,8 +8,8 @@ const { pendingRequests } = require('./productKafkaProducer');
  * Consumer Group : ai-service-product-group
  *
  * Subscribed Topics:
- *   - product.search.response   → resolves pending search requests
- *   - product.inventory.response → resolves pending inventory checks
+ *   - product.search.response   â†’ resolves pending search requests
+ *   - product.inventory.response â†’ resolves pending inventory checks
  *
  * Uses the Request-Reply pattern (Correlation ID) shared with productKafkaProducer.
  * Non-fatal: if broker is unreachable the consumer logs a warning and the
@@ -22,9 +23,9 @@ const TOPICS = ['product.search.response', 'product.inventory.response'];
 let consumer = null;
 let isConnected = false;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Message handler — resolves the matching pending promise by correlationId
-// ──────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Message handler â€” resolves the matching pending promise by correlationId
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function handleMessage(topic, message) {
   let payload;
   try {
@@ -43,32 +44,51 @@ function handleMessage(topic, message) {
 
   const pending = pendingRequests.get(correlationId);
   if (!pending) {
-    // Already timed out or duplicate — safe to ignore
+    // Already timed out or duplicate â€” safe to ignore
     return;
   }
 
   clearTimeout(pending.timer);
   pendingRequests.delete(correlationId);
 
-  console.log(`[KafkaConsumer] 📥 Resolved ${topic} (correlationId: ${correlationId})`);
+  console.log(`[KafkaConsumer] ðŸ“¥ Resolved ${topic} (correlationId: ${correlationId})`);
   pending.resolve(data);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Start consumer — connects to broker and subscribes to response topics
-// ──────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Start consumer â€” connects to broker and subscribes to response topics
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function startConsumer() {
+  if (process.env.KAFKA_ENABLED === 'false') {
+    console.warn('[KafkaConsumer] Disabled by KAFKA_ENABLED=false; HTTP fallback remains active.');
+    return null;
+  }
+
   try {
+    console.log('[ai-service] Ensuring Kafka topics...');
+    const topicResult = await ensureTopics(TOPICS, { retries: 5, retryDelayMs: 3000 });
+    if (!topicResult.ready) {
+      console.warn(`[ai-service] Kafka unavailable, product reply topics not ready: ${topicResult.reason}`);
+      setTimeout(() => {
+        startConsumer().catch((retryError) => {
+          console.warn('[ai-service] Kafka product reply consumer retry failed:', retryError.message);
+        });
+      }, 5000).unref?.();
+      return null;
+    }
+    console.log('[ai-service] Kafka topics ready');
+    console.log('[ai-service] Starting Kafka consumer...');
+
     consumer = getKafka().consumer({ groupId: CONSUMER_GROUP_ID });
 
     await consumer.connect();
     isConnected = true;
-    console.log(`[KafkaConsumer] ✅ Connected (group: ${CONSUMER_GROUP_ID})`);
+    console.log(`[KafkaConsumer] âœ… Connected (group: ${CONSUMER_GROUP_ID})`);
 
     // Subscribe to all response topics
     for (const topic of TOPICS) {
       await consumer.subscribe({ topic, fromBeginning: false });
-      console.log(`[KafkaConsumer] 📡 Subscribed to: ${topic}`);
+      console.log(`[KafkaConsumer] ðŸ“¡ Subscribed to: ${topic}`);
     }
 
     // Start consuming
@@ -78,14 +98,19 @@ async function startConsumer() {
       },
     });
 
-    console.log('[KafkaConsumer] 🚀 Consumer running and ready');
+    console.log('[KafkaConsumer] ðŸš€ Consumer running and ready');
   } catch (err) {
     isConnected = false;
     console.warn(
-      `[KafkaConsumer] ⚠️  Could not connect to Kafka broker — running without Kafka.\n` +
+      `[KafkaConsumer] âš ï¸  Could not connect to Kafka broker â€” running without Kafka.\n` +
         `  Reason: ${err.message}\n` +
-        `  → productClient.js will use HTTP fallback automatically.`
+        `  â†’ productClient.js will use HTTP fallback automatically.`
     );
+    setTimeout(() => {
+      startConsumer().catch((retryError) => {
+        console.warn('[ai-service] Kafka product reply consumer retry failed:', retryError.message);
+      });
+    }, 5000).unref?.();
   }
 }
 
@@ -98,3 +123,6 @@ async function stopConsumer() {
 }
 
 module.exports = { startConsumer, stopConsumer, isConnected: () => isConnected };
+
+
+

@@ -1,5 +1,7 @@
 const chatService = require('../services/chatService');
 const { checkAiChatLimit } = require('../utils/aiRateLimiter');
+const TOPICS = require('../events/topics');
+const { publishEvent } = require('../events/kafkaProducer');
 
 module.exports = function (io) {
   io.on('connection', (socket) => {
@@ -70,6 +72,27 @@ module.exports = function (io) {
                 cart: [],
                 showCheckoutButton: false,
               },
+        });
+
+        publishEvent(TOPICS.AI_CHAT_CREATED, {
+          data: {
+            userId: userId || 'guest',
+            sessionId,
+            question: message,
+            answer: replyText,
+            intent: result.data?.intent || null,
+            createdAt: new Date(),
+          },
+        }).then((result) => {
+          if (result.published) {
+            console.log(
+              `[ai-service] Published ai.chat.created eventId=${result.event.eventId} sessionId=${sessionId} userId=${userId || 'guest'}`,
+            );
+          } else {
+            console.warn('[ai-service] Kafka unavailable, skipped ai.chat.created publish');
+          }
+        }).catch((error) => {
+          console.warn('[ai-service] Failed ai.chat.created publish:', error.message);
         });
       } catch (err) {
         console.error('AISocket send_message error:', err.message);

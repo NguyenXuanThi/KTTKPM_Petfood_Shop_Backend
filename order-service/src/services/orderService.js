@@ -18,6 +18,8 @@ const {
   rewardInternalKey,
   rewardServiceTimeoutMs,
 } = require("../config/env");
+const TOPICS = require("../events/topics");
+const { publishEvent } = require("../events/kafkaProducer");
 
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
@@ -711,6 +713,26 @@ const markCompleted = async (orderId) => {
   order.completedAt = new Date();
   await order.save();
   await grantRewardSpinsIfEligible(order);
+  const completedPublish = await publishEvent(TOPICS.ORDER_COMPLETED, {
+    data: {
+      orderId: order._id.toString(),
+      userId: order.userId.toString(),
+      totalAmount: order.totalAmount,
+      completedAt: order.completedAt,
+      items: order.items.map((item) => ({
+        productId: item.productId.toString(),
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    },
+  });
+  if (completedPublish.published) {
+    console.log(
+      `[order-service] Published order.completed eventId=${completedPublish.event.eventId} orderId=${order._id} userId=${order.userId}`,
+    );
+  } else {
+    console.warn("[order-service] Kafka unavailable, skipped order.completed publish");
+  }
   return order.toObject();
 };
 
@@ -746,6 +768,21 @@ const cancelOrder = async (orderId, reason = "") => {
       : `Cancel reason: ${reason}`;
   }
   await order.save();
+  const cancelledPublish = await publishEvent(TOPICS.ORDER_CANCELLED, {
+    data: {
+      orderId: order._id.toString(),
+      userId: order.userId.toString(),
+      cancelledAt: order.cancelledAt,
+      reason: order.cancelledReason,
+    },
+  });
+  if (cancelledPublish.published) {
+    console.log(
+      `[order-service] Published order.cancelled eventId=${cancelledPublish.event.eventId} orderId=${order._id} reason=${order.cancelledReason}`,
+    );
+  } else {
+    console.warn("[order-service] Kafka unavailable, skipped order.cancelled publish");
+  }
   return order.toObject();
 };
 
@@ -934,6 +971,36 @@ const updatePaymentStatusInternal = async (orderId, paymentStatus) => {
   return order.toObject();
 };
 
+const handlePaymentPaidEvent = async (data = {}) => {
+  if (!data.orderId) return null;
+  const order = await getOrderForUpdate(data.orderId);
+  if (order.paymentStatus === "paid") {
+    console.log(`[order-service] Order already paid orderId=${data.orderId}, skipping`);
+    return order.toObject();
+  }
+
+  order.paymentStatus = "paid";
+  order.paidAt = order.paidAt || (data.paidAt ? new Date(data.paidAt) : new Date());
+  await order.save();
+  console.log(`[order-service] Updated order paymentStatus=paid orderId=${data.orderId}`);
+
+  if (order.couponCode) {
+    const autoShippingDiscount =
+      order.subtotal >= FREE_SHIPPING_THRESHOLD ? BASE_SHIPPING_FEE : 0;
+    await markCouponUsed({
+      userId: order.userId.toString(),
+      couponCode: order.couponCode,
+      orderId: order._id.toString(),
+      orderAmount: order.subtotal,
+      shippingFee: Math.max(0, order.shippingFee - autoShippingDiscount),
+      discountAmount:
+        order.couponDiscount + (order.couponShippingDiscount || 0),
+    });
+  }
+
+  return order.toObject();
+};
+
 const checkReviewEligibility = async ({ userId, productId, orderId }) => {
   ensureObjectId(userId, "Invalid user id");
   ensureObjectId(productId, "Invalid product id");
@@ -1001,5 +1068,6 @@ module.exports = {
   expireOverdueBankingOrders,
   updateCodPaymentStatus,
   updatePaymentStatusInternal,
+  handlePaymentPaidEvent,
   checkReviewEligibility,
 };
