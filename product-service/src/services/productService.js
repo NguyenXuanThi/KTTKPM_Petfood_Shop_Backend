@@ -1,8 +1,14 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
+const crypto = require("crypto");
 const Product = require("../models/Product");
 const { uploadProductImage, deleteProductImage } = require("./uploadClient");
 const { ensureActiveCategory } = require("./categoryClient");
+const { getJson, setJson, deleteByPattern, safeRedis } = require("../config/redis");
+
+const PRODUCT_LIST_CACHE_PREFIX = "cache:products:list";
+const PRODUCT_DETAIL_CACHE_PREFIX = "cache:products:detail";
+const PRODUCT_CACHE_TTL_SECONDS = 3 * 60;
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -19,6 +25,25 @@ const getSafeSlug = (value) =>
     strict: true,
     trim: true,
   }) || "product";
+
+const stableHash = (value) =>
+  crypto
+    .createHash("sha1")
+    .update(JSON.stringify(value || {}))
+    .digest("hex");
+
+const productListCacheKey = (query) =>
+  `${PRODUCT_LIST_CACHE_PREFIX}:${stableHash(query)}`;
+
+const productDetailCacheKey = (productId) =>
+  `${PRODUCT_DETAIL_CACHE_PREFIX}:${productId}`;
+
+const invalidateProductCache = async (productId = null) => {
+  await deleteByPattern(`${PRODUCT_LIST_CACHE_PREFIX}:*`);
+  if (productId) {
+    await safeRedis((client) => client.del(productDetailCacheKey(productId)));
+  }
+};
 
 const ensureObjectId = (id) => {
   if (!mongoose.isValidObjectId(id)) {
@@ -66,6 +91,7 @@ const createProduct = async (payload, imageFile) => {
       imageProvider: uploadedImage.provider || "s3",
     });
 
+    await invalidateProductCache();
     return product;
   } catch (error) {
     await deleteProductImage({
@@ -84,6 +110,17 @@ const listProducts = async ({
   sortBy,
   sortOrder,
 }) => {
+  const cacheKey = productListCacheKey({
+    keyword,
+    categoryId,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
+  });
+  const cached = await getJson(cacheKey);
+  if (cached) return cached;
+
   const filter = {};
 
   if (keyword) {
@@ -105,7 +142,7 @@ const listProducts = async ({
     Product.countDocuments(filter),
   ]);
 
-  return {
+  const result = {
     items,
     meta: {
       page,
@@ -114,10 +151,17 @@ const listProducts = async ({
       totalPages: Math.ceil(total / limit) || 1,
     },
   };
+
+  await setJson(cacheKey, result, PRODUCT_CACHE_TTL_SECONDS);
+  return result;
 };
 
 const getProductDetail = async (productId) => {
   ensureObjectId(productId);
+
+  const cacheKey = productDetailCacheKey(productId);
+  const cached = await getJson(cacheKey);
+  if (cached) return cached;
 
   const product = await Product.findById(productId);
 
@@ -127,10 +171,13 @@ const getProductDetail = async (productId) => {
     throw error;
   }
 
-  return {
+  const result = {
     ...product.toObject(),
     rating: product.averageRating || 0,
   };
+
+  await setJson(cacheKey, result, PRODUCT_CACHE_TTL_SECONDS);
+  return result;
 };
 
 const updateProduct = async (productId, payload, imageFile) => {
@@ -180,6 +227,7 @@ const updateProduct = async (productId, payload, imageFile) => {
     }
 
     await product.save();
+    await invalidateProductCache(productId);
 
     if (uploadedImage && oldImageKey && oldImageKey !== uploadedImage.key) {
       await deleteProductImage({
@@ -216,6 +264,7 @@ const deleteProduct = async (productId) => {
     provider: product.imageProvider || "s3",
     key: product.imageKey,
   }).catch(() => null);
+  await invalidateProductCache(productId);
 
   return product;
 };
@@ -238,6 +287,7 @@ const updateRatingSummary = async (productId, payload) => {
     throw error;
   }
 
+  await invalidateProductCache(productId);
   return product;
 };
 

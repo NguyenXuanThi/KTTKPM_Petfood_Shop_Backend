@@ -1,12 +1,18 @@
 const axios = require("axios");
 const Coupon = require("../models/Coupon");
 const UserCoupon = require("../models/UserCoupon");
+const { getJson, setJson, deleteByPattern } = require("../config/redis");
 const {
   userServiceUrl,
   userServiceTimeoutMs,
   notificationServiceUrl,
   notificationServiceTimeoutMs,
 } = require("../config/env");
+
+const PUBLIC_COUPON_CACHE_KEY = "cache:coupons:public";
+const AVAILABLE_COUPON_CACHE_PREFIX = "cache:coupons:available";
+const PUBLIC_COUPON_TTL_SECONDS = 3 * 60;
+const AVAILABLE_COUPON_TTL_SECONDS = 60;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -21,6 +27,13 @@ const fetchUser = async (userId) => {
     timeout: userServiceTimeoutMs,
   });
   return data.user;
+};
+
+const availableCouponCacheKey = ({ userId, subtotal, shippingFee }) =>
+  `${AVAILABLE_COUPON_CACHE_PREFIX}:${userId}:${Number(subtotal || 0)}:${Number(shippingFee || 0)}`;
+
+const invalidateCouponCache = async () => {
+  await deleteByPattern("cache:coupons:*");
 };
 
 const invalidCoupon = (message) => ({
@@ -176,6 +189,10 @@ const availableCouponDto = ({ coupon, validation, source, userCouponId = null })
 });
 
 const getAvailableCoupons = async ({ userId, subtotal = 0, shippingFee = 0 }) => {
+  const cacheKey = availableCouponCacheKey({ userId, subtotal, shippingFee });
+  const cached = await getJson(cacheKey);
+  if (cached) return cached;
+
   const orderAmount = Number(subtotal);
   const fee = Number(shippingFee);
   const result = [];
@@ -232,6 +249,7 @@ const getAvailableCoupons = async ({ userId, subtotal = 0, shippingFee = 0 }) =>
     );
   }
 
+  await setJson(cacheKey, result, AVAILABLE_COUPON_TTL_SECONDS);
   return result;
 };
 
@@ -266,6 +284,7 @@ const createCoupon = async (adminId, payload) => {
   if (existing) throw createError("Coupon code already exists", 409);
 
   const coupon = await Coupon.create({ ...payload, createdBy: adminId });
+  await invalidateCouponCache();
   return coupon;
 };
 
@@ -294,6 +313,7 @@ const disableCoupon = async (couponId) => {
 
   coupon.isActive = false;
   await coupon.save();
+  await invalidateCouponCache();
   return coupon;
 };
 
@@ -340,6 +360,7 @@ const assignCoupon = async ({ couponId, userId }) => {
     );
   }
 
+  await invalidateCouponCache();
   return userCoupon;
 };
 
@@ -377,6 +398,7 @@ const assignCouponInternal = async ({
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
+  await invalidateCouponCache();
   return userCoupon;
 };
 
@@ -433,6 +455,10 @@ const getMyCoupons = async (userId, filters = {}) => {
 };
 
 const getPublicCoupons = async ({ userId, orderAmount = 0, shippingFee = 0 }) => {
+  const cacheKey = `${PUBLIC_COUPON_CACHE_KEY}:${userId || "guest"}:${Number(orderAmount)}:${Number(shippingFee)}`;
+  const cached = await getJson(cacheKey);
+  if (cached) return cached;
+
   const now = new Date();
   const coupons = await Coupon.find({
     scope: "global",
@@ -452,6 +478,7 @@ const getPublicCoupons = async ({ userId, orderAmount = 0, shippingFee = 0 }) =>
     result.push({ coupon: publicCouponDto(coupon), validation });
   }
 
+  await setJson(cacheKey, result, PUBLIC_COUPON_TTL_SECONDS);
   return result;
 };
 
@@ -505,6 +532,7 @@ const markCouponUsed = async ({ userId, code, orderId, orderAmount, shippingFee,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
+  await invalidateCouponCache();
   return { coupon, userCoupon };
 };
 
@@ -570,6 +598,7 @@ const assignBirthdayCoupon = async ({ userId, adminId }) => {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
+  await invalidateCouponCache();
   return { coupon, userCoupon };
 };
 

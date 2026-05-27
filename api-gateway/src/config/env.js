@@ -68,4 +68,6 @@ module.exports = {
   ),
   rateLimitMax: Number(process.env.API_GATEWAY_RATE_LIMIT_MAX || 200),
   proxyTimeoutMs: Number(process.env.API_GATEWAY_PROXY_TIMEOUT_MS || 15000),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };

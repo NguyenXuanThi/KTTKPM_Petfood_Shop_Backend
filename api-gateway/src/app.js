@@ -2,10 +2,10 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
-const rateLimit = require("express-rate-limit");
 
-const { corsOrigin, rateLimitWindowMs, rateLimitMax } = require("./config/env");
+const { corsOrigin } = require("./config/env");
 const { loggerMiddleware } = require("./middlewares/loggerMiddleware");
+const { apiRateLimiter } = require("./middlewares/redisRateLimitMiddleware");
 const { requireAuth } = require("./middlewares/authMiddleware");
 const { requireAdmin } = require("./middlewares/adminMiddleware");
 const {
@@ -53,17 +53,6 @@ app.use(
 );
 app.use(compression());
 app.use(loggerMiddleware);
-
-const apiLimiter = rateLimit({
-  windowMs: rateLimitWindowMs,
-  max: rateLimitMax,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many requests. Please try again later.",
-  },
-});
 
 const requireAdminOnWriteMethods = (req, res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
@@ -141,7 +130,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.use("/api", apiLimiter);
+app.use("/api", apiRateLimiter);
 
 app.use("/api/auth", authProxy);
 app.use("/api/products/:productId/reviews", productReviewProxy);

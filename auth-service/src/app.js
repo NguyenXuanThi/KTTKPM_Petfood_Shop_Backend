@@ -68,6 +68,14 @@ app.use((error, req, res, next) => {
     payload.userId = error.userId;
   }
 
+  if (error.remainingSeconds !== undefined) {
+    payload.remainingSeconds = error.remainingSeconds;
+  }
+
+  if (error.retryAfterSeconds !== undefined) {
+    payload.retryAfterSeconds = error.retryAfterSeconds;
+  }
+
   return res.status(statusCode).json(payload);
 });
 

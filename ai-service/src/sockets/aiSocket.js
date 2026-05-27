@@ -1,4 +1,5 @@
 const chatService = require('../services/chatService');
+const { checkAiChatLimit } = require('../utils/aiRateLimiter');
 
 module.exports = function (io) {
   io.on('connection', (socket) => {
@@ -14,6 +15,21 @@ module.exports = function (io) {
 
     socket.on('send_message', async ({ sessionId, message, userId }) => {
       try {
+        const allowed = await checkAiChatLimit(socket.handshake.address || socket.id);
+        if (!allowed) {
+          socket.emit('receive_message', {
+            success: false,
+            data: {
+              message: 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.',
+              assistantMessage: 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.',
+              products: [],
+              cart: [],
+              showCheckoutButton: false,
+            },
+          });
+          return;
+        }
+
         if (!sessionId || !message) {
           socket.emit('receive_message', {
             success: false,

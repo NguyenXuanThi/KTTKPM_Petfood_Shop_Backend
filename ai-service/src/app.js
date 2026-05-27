@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 const config = require('./config/env');
+const { aiChatRateLimiter } = require('./middlewares/redisRateLimitMiddleware');
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(aiChatRateLimiter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', service: 'AI Service', timestamp: new Date().toISOString() });

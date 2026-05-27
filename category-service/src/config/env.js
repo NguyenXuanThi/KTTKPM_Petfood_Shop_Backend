@@ -18,4 +18,6 @@ module.exports = {
   mongoUri: process.env.CATEGORY_MONGODB_URI,
   corsOrigin: process.env.CATEGORY_CORS_ORIGIN || "*",
   menuCacheTtlMs: Number(process.env.CATEGORY_MENU_CACHE_TTL_MS || 60000),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };
