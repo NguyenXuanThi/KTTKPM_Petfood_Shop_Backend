@@ -6,7 +6,7 @@ const compression = require("compression");
 const { corsOrigin } = require("./config/env");
 const { loggerMiddleware } = require("./middlewares/loggerMiddleware");
 const { apiRateLimiter } = require("./middlewares/redisRateLimitMiddleware");
-const { requireAuth } = require("./middlewares/authMiddleware");
+const { optionalAuth, requireAuth } = require("./middlewares/authMiddleware");
 const { requireAdmin } = require("./middlewares/adminMiddleware");
 const {
   notFoundHandler,
@@ -31,26 +31,47 @@ const productReviewProxy = require("./routes/productReviewProxy");
 const statisticsProxy = require("./routes/statisticsProxy");
 const rewardProxy = require("./routes/rewardProxy");
 const adminRewardProxy = require("./routes/adminRewardProxy");
-// const aiProxy = require("./routes/aiProxy");
+const aiProxy = require("./routes/aiProxy");
 const chatProxy = require("./routes/chatProxy");
 const appointmentProxy = require("./routes/appointmentProxy");
 
 const app = express();
 
-app.use(helmet());
-app.use(
-  cors({
-    origin: corsOrigin === "*" ? true : corsOrigin,
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-internal-key",
-      "x-cart-token",
-    ],
-  }),
+const isAllowedCorsOrigin = (origin) => {
+  if (!origin) return true;
+  return Array.isArray(corsOrigin)
+    ? corsOrigin.includes(origin)
+    : corsOrigin === origin;
+};
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedCorsOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-internal-key",
+    "x-cart-token",
+    "x-session-id",
+  ],
+};
+
+console.log(
+  `[api-gateway] CORS enabled for: ${
+    Array.isArray(corsOrigin) ? corsOrigin.join(", ") : corsOrigin
+  }`,
 );
+
+app.use(helmet());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(compression());
 app.use(loggerMiddleware);
 
@@ -126,6 +147,7 @@ app.get("/api/health", (req, res) => {
       adminReviews: "/api/admin/reviews/*",
       adminRewards: "/api/admin/rewards/*",
       appointments: "/api/appointments/*",
+      ai: "/api/ai/*",
     },
   });
 });
@@ -144,6 +166,7 @@ app.use("/api/payments", requireAuth, paymentProxy);
 app.use("/api/uploads", requireAuth, uploadProxy);
 app.use("/api/reviews", requireAuth, reviewProxy);
 app.use("/api/rewards", requireAuth, rewardProxy);
+app.use("/api/ai", optionalAuth, aiProxy);
 app.use("/api/notifications/password-reset-otp", notificationProxy);
 
 app.use(

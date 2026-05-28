@@ -28,6 +28,29 @@ const requireAuth = (req, res, next) => {
   }
 };
 
+const optionalAuth = (req, _res, next) => {
+  const authorizationHeader = req.headers.authorization || "";
+  const [scheme, token] = authorizationHeader.split(" ");
+
+  if (scheme !== "Bearer" || !token) {
+    return next();
+  }
+
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    req.auth = {
+      sub: payload.sub,
+      role: payload.role,
+      email: payload.email,
+    };
+  } catch (_error) {
+    // Public routes can still work as guest if the token is absent/expired.
+  }
+
+  return next();
+};
+
 module.exports = {
   requireAuth,
+  optionalAuth,
 };

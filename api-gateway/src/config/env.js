@@ -18,6 +18,7 @@ const requiredEnvVars = [
   "REVIEW_SERVICE_URL",
   "REWARD_SERVICE_URL",
   "APPOINTMENT_SERVICE_URL",
+  "AI_SERVICE_URL",
   "JWT_SECRET",
 ];
 
@@ -27,17 +28,18 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-/** Comma-separated origins → array; single origin stays a string; "*" unchanged. */
+const DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+
+/** Comma-separated origins -> array. Wildcard is not allowed with credentials. */
 function parseCorsOrigin(value) {
-  const raw = (value || "http://localhost:5173").trim();
-  if (raw === "*") return "*";
-  if (raw.includes(",")) {
-    return raw
-      .split(",")
-      .map((o) => o.trim())
-      .filter(Boolean);
-  }
-  return raw;
+  const raw = (value || "").trim();
+  if (!raw || raw === "*") return DEFAULT_CORS_ORIGINS;
+
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .filter((origin) => origin !== "*");
 }
 
 module.exports = {
@@ -60,7 +62,7 @@ module.exports = {
   reviewServiceUrl: process.env.REVIEW_SERVICE_URL,
   rewardServiceUrl: process.env.REWARD_SERVICE_URL,
   appointmentServiceUrl: process.env.APPOINTMENT_SERVICE_URL,
-  //  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
+  aiServiceUrl: process.env.AI_SERVICE_URL,
   chatServiceUrl: process.env.CHAT_SERVICE_URL || "http://localhost:3012", // User-Admin chat
 
   rateLimitWindowMs: Number(
@@ -71,3 +73,4 @@ module.exports = {
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
   redisEnabled: process.env.REDIS_ENABLED !== "false",
 };
+

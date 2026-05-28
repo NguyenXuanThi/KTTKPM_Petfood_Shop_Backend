@@ -291,6 +291,61 @@ const updateRatingSummary = async (productId, payload) => {
   return product;
 };
 
+const getProductsByIds = async (productIds = []) => {
+  const validIds = [...new Set(productIds.filter((id) => mongoose.isValidObjectId(id)))];
+  if (validIds.length === 0) return [];
+
+  const products = await Product.find({
+    _id: { $in: validIds },
+    isActive: true,
+  }).lean();
+
+  const byId = new Map(products.map((product) => [product._id.toString(), product]));
+  return validIds.map((id) => byId.get(id.toString())).filter(Boolean);
+};
+
+const getBestSellers = async (limit = 8) => {
+  const safeLimit = Math.min(Math.max(Number(limit) || 8, 1), 24);
+
+  return Product.find({ isActive: true })
+    .sort({ reviewCount: -1, averageRating: -1, createdAt: -1 })
+    .limit(safeLimit)
+    .lean();
+};
+
+const getRelatedProducts = async ({ productId, categoryId, limit = 12 }) => {
+  const safeLimit = Math.min(Math.max(Number(limit) || 12, 1), 24);
+  const filter = { isActive: true };
+
+  if (categoryId && mongoose.isValidObjectId(categoryId)) {
+    filter.categoryId = categoryId;
+  }
+
+  if (productId && mongoose.isValidObjectId(productId)) {
+    filter._id = { $ne: productId };
+  }
+
+  const related = await Product.find(filter)
+    .sort({ reviewCount: -1, averageRating: -1, createdAt: -1 })
+    .limit(safeLimit)
+    .lean();
+
+  if (related.length >= safeLimit || !categoryId) return related;
+
+  const existingIds = new Set(related.map((product) => product._id.toString()));
+  if (productId) existingIds.add(productId.toString());
+
+  const fillers = await Product.find({
+    isActive: true,
+    _id: { $nin: Array.from(existingIds) },
+  })
+    .sort({ reviewCount: -1, averageRating: -1, createdAt: -1 })
+    .limit(safeLimit - related.length)
+    .lean();
+
+  return [...related, ...fillers];
+};
+
 module.exports = {
   createProduct,
   listProducts,
@@ -298,4 +353,7 @@ module.exports = {
   updateProduct,
   deleteProduct,
   updateRatingSummary,
+  getProductsByIds,
+  getBestSellers,
+  getRelatedProducts,
 };

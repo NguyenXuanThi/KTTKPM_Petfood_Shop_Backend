@@ -5,6 +5,8 @@
   ORDER_CANCELLED: "order.cancelled",
   COUPON_ASSIGNED: "coupon.assigned",
   REVIEW_CREATED: "review.created",
+  PRODUCT_VIEWED: "product.viewed",
+  PRODUCT_SEARCHED: "product.searched",
   REWARD_GRANTED: "reward.granted",
   APPOINTMENT_CREATED: "appointment.created",
   AI_CHAT_CREATED: "ai.chat.created",

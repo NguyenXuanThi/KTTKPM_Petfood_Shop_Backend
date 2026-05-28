@@ -30,6 +30,21 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/products", productRoutes);
+app.post(
+  "/internal/products/batch",
+  requireInternal,
+  productController.getProductsBatchInternal,
+);
+app.get(
+  "/internal/products/best-sellers",
+  requireInternal,
+  productController.getBestSellersInternal,
+);
+app.get(
+  "/internal/products/related",
+  requireInternal,
+  productController.getRelatedProductsInternal,
+);
 app.patch(
   "/internal/products/:id/rating-summary",
   requireInternal,

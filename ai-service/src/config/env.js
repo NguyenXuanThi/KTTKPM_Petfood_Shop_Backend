@@ -15,6 +15,8 @@ module.exports = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PRODUCT_SERVICE_URL:
     process.env.PRODUCT_SERVICE_URL || "http://localhost:3003",
+  PRODUCT_INTERNAL_KEY:
+    process.env.PRODUCT_INTERNAL_KEY || process.env.ORDER_INTERNAL_KEY || "petfood_internal_key",
   CATEGORY_SERVICE_URL:
     process.env.CATEGORY_SERVICE_URL || "http://localhost:3005",
   APPOINTMENT_SERVICE_URL:

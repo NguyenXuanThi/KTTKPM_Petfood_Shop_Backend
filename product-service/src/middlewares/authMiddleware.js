@@ -15,12 +15,11 @@ const optionalAuth = (req, res, next) => {
 
   try {
     req.auth = jwt.verify(token, jwtSecret);
-    return next();
   } catch (_error) {
-    return res.status(401).json({
-      message: "Invalid or expired token",
-    });
+    // Public product browsing should still work as guest if token is absent/expired.
   }
+
+  return next();
 };
 
 const requireAuth = (req, res, next) => {

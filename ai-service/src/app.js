@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const config = require('./config/env');
 const { aiChatRateLimiter } = require('./middlewares/redisRateLimitMiddleware');
+const recommendationRoutes = require('./routes/recommendationRoutes');
 
 const app = express();
 
@@ -19,6 +20,8 @@ app.use(aiChatRateLimiter);
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', service: 'AI Service', timestamp: new Date().toISOString() });
 });
+
+app.use('/recommendations', recommendationRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
