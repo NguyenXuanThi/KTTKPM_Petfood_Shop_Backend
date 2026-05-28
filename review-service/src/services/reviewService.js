@@ -5,6 +5,8 @@ const {
   updateProductRatingSummary,
   getUserSnapshot,
 } = require("./serviceClients");
+const TOPICS = require("../events/topics");
+const { publishEvent } = require("../events/kafkaProducer");
 
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
@@ -172,6 +174,26 @@ const createReview = async (userId, payload) => {
     });
 
     const summary = await syncProductSummary(payload.productId);
+    const reviewPublish = await publishEvent(TOPICS.REVIEW_CREATED, {
+      data: {
+        reviewId: review._id.toString(),
+        productId: review.productId.toString(),
+        userId: review.userId.toString(),
+        rating: review.rating,
+        summary: {
+          averageRating: summary.averageRating,
+          reviewCount: summary.totalReviews,
+        },
+        createdAt: review.createdAt,
+      },
+    });
+    if (reviewPublish.published) {
+      console.log(
+        `[review-service] Published review.created eventId=${reviewPublish.event.eventId} reviewId=${review._id} productId=${review.productId}`,
+      );
+    } else {
+      console.warn("[review-service] Kafka unavailable, skipped review.created publish");
+    }
     return { review: review.toObject(), summary };
   } catch (error) {
     if (error.code === 11000) {

@@ -2,7 +2,7 @@ const express = require("express");
 const productController = require("../controllers/productController");
 const statisticsController = require("../controllers/statisticsController");
 const { upload } = require("../middlewares/uploadMiddleware");
-const { requireAuth } = require("../middlewares/authMiddleware");
+const { optionalAuth, requireAuth } = require("../middlewares/authMiddleware");
 const { requireAdmin } = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
@@ -13,9 +13,9 @@ router.get(
   requireAdmin,
   statisticsController.getProductStatistics,
 );
-router.get("/", productController.listProducts);
-router.get("/search", productController.listProducts);
-router.get("/:id", productController.getProductDetail);
+router.get("/", optionalAuth, productController.listProducts);
+router.get("/search", optionalAuth, productController.listProducts);
+router.get("/:id", optionalAuth, productController.getProductDetail);
 router.post("/", upload.single("image"), productController.createProduct);
 router.put("/:id", upload.single("image"), productController.updateProduct);
 router.delete("/:id", productController.deleteProduct);

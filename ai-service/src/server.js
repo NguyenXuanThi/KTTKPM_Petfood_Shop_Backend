@@ -1,107 +1,99 @@
-const http = require('http');
-const app = require('./app');
-const config = require('./config/env');
-const connectDB = require('./config/db');
-const { Server } = require('socket.io');
-const chatService = require('./services/chatService');
+﻿const http = require("http");
+const app = require("./app");
+const config = require("./config/env");
+const connectDB = require("./config/db");
+const { Server } = require("socket.io");
+const {
+  startConsumer,
+  stopConsumer,
+} = require("./services/productKafkaConsumer");
+const {
+  startRecommendationConsumer,
+  stopRecommendationConsumer,
+} = require("./events/recommendationConsumer");
+const TOPICS = require("./events/topics");
+const { ensureTopics } = require("./events/kafkaAdmin");
 
-// Connect to MongoDB
+// ── Database ─────────────────────────────────────────
 connectDB();
 
-// Create HTTP server
+// ── HTTP + Socket.IO ────────────────────────────────
 const server = http.createServer(app);
 
-// Setup Socket.IO for real-time chat
 const io = new Server(server, {
   cors: {
     origin: config.CORS_ORIGIN,
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
 });
 
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log('✅ Client connected:', socket.id);
+const setupAISocket = require("./sockets/aiSocket");
+setupAISocket(io);
 
-  // Join conversation room
-  socket.on('join_conversation', (data) => {
-    const { sessionId } = data;
-    socket.join(sessionId);
-    console.log(`User joined conversation: ${sessionId}`);
-  });
-
-  // Handle chat message
-  socket.on('send_message', async (data) => {
-    try {
-      const { sessionId, message, userId } = data;
-
-      // Process message through chat service
-      const result = await chatService.sendMessage(
-        sessionId || `session_${userId}_${Date.now()}`,
-        message,
-        userId || 'anonymous'
-      );
-
-      if (result.success) {
-        console.log('Sending products to client:', result.data.products);
-        console.log('Cart:', result.data.cart);
-        console.log('Show checkout button:', result.data.showCheckoutButton);
-        
-        // Emit response to the room
-        io.to(sessionId).emit('receive_message', {
-          success: true,
-          data: {
-            userMessage: message,
-            assistantMessage: result.data.message,
-            intent: result.data.intent,
-            products: result.data.products,
-            cart: result.data.cart,
-            showCheckoutButton: result.data.showCheckoutButton,
-            sessionId: result.data.sessionId,
-            timestamp: new Date()
-          }
-        });
-      } else {
-        socket.emit('error', {
-          success: false,
-          message: result.message || 'Failed to process message'
-        });
-      }
-    } catch (error) {
-      console.error('Socket message error:', error);
-      socket.emit('error', {
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  });
-
-  // Handle typing indicator
-  socket.on('typing', (data) => {
-    const { sessionId, userId } = data;
-    socket.to(sessionId).emit('user_typing', { userId });
-  });
-
-  // Handle disconnect
-  socket.on('disconnect', () => {
-    console.log('❌ Client disconnected:', socket.id);
-  });
+// ── Kafka Consumer (non-fatal) ─────────────────────
+// Started after HTTP server is ready. Failure here does NOT crash the service;
+// productClient.js falls back to HTTP when Kafka is unavailable.
+startConsumer().catch((err) => {
+  console.warn(
+    "[Server] Kafka consumer startup error (non-fatal):",
+    err.message,
+  );
 });
 
-// Start server
+startRecommendationConsumer().catch((err) => {
+  console.warn(
+    "[ai-service] Recommendation Kafka consumer startup error (non-fatal):",
+    err.message,
+  );
+});
+
+// ── Start HTTP server ──────────────────────────────
 const PORT = config.PORT;
 server.listen(PORT, () => {
-  console.log(`🚀 Chat Service running on port ${PORT}`);
-  console.log(`📡 WebSocket server ready`);
-  console.log(`🌍 Environment: ${config.NODE_ENV}`);
+  console.log(`🤖 AI Service running on port ${PORT}`);
+  console.log(`🚀 WebSocket server ready`);
+  console.log(`🌳 Environment: ${config.NODE_ENV}`);
+  console.log("[ai-service] Ensuring Kafka topics...");
+  ensureTopics([
+    TOPICS.AI_CHAT_CREATED,
+    TOPICS.PRODUCT_VIEWED,
+    TOPICS.PRODUCT_SEARCHED,
+  ])
+    .then((result) => {
+      if (result.ready) console.log("[ai-service] Kafka topics ready");
+      else
+        console.warn(
+          `[ai-service] Kafka unavailable, topic bootstrap skipped: ${result.reason}`,
+        );
+    })
+    .catch((error) => {
+      console.warn("[ai-service] Kafka topic bootstrap failed:", error.message);
+    });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`❌ Port ${PORT} is already in use.`);
+    console.error(
+      "Chạy: npm run free-port hoặc npm run dev (tự giải phóng port trước khi start).",
+    );
+    console.error("Hoặc đổi port trong .env: AI_PORT=3016");
+    process.exit(1);
+  }
+  console.error("Server error:", err);
+});
+
+// ── Graceful shutdown ──────────────────────────────
+async function shutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  await stopConsumer();
+  await stopRecommendationConsumer();
   server.close(() => {
-    console.log('HTTP server closed');
+    console.log("HTTP server closed");
     process.exit(0);
   });
-});
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

@@ -1,26 +1,50 @@
 const { createPaymentUrl, verifyReturnUrl } = require("../utils/vnpay");
-const Payment = require("../models/Payment");
+const { Payment } = require("../models/Payment");
 const orderClient = require("../services/orderClient");
 
-/**
- * POST /payments/vnpay/create
- * Tạo payment URL cho VNPay
- */
+const initVnpayPayment = async (req, res, next) => {
+  try {
+    const { orderId, userId, amount, ipAddr } = req.body;
+
+    const payment = await Payment.create({
+      orderId,
+      userId,
+      paymentMethod: "vnpay",
+      amount,
+      status: "pending",
+    });
+
+    const paymentUrl = createPaymentUrl({
+      txnRef: payment._id.toString(),
+      amount,
+      orderInfo: `Thanh toan don hang ${orderId}`,
+      ipAddr: ipAddr || "127.0.0.1",
+    });
+
+    return res.json({
+      success: true,
+      payment,
+      paymentUrl,
+    });
+  } catch (error) {
+    console.error("Init VNPay payment (internal) error:", error);
+    return next(error);
+  }
+};
+
 const createVnpayPayment = async (req, res, next) => {
   try {
     const { orderId, amount, orderInfo } = req.body;
     const userId = req.auth.sub;
 
-    // Tạo payment record
     const payment = await Payment.create({
       orderId,
       userId,
-      method: "vnpay",
+      paymentMethod: "vnpay",
       amount,
       status: "pending",
     });
 
-    // Tạo VNPay payment URL
     const paymentUrl = createPaymentUrl({
       txnRef: payment._id.toString(),
       amount,
@@ -39,15 +63,10 @@ const createVnpayPayment = async (req, res, next) => {
   }
 };
 
-/**
- * GET /payments/vnpay/verify
- * Verify VNPay return URL
- */
 const verifyVnpayReturn = async (req, res, next) => {
   try {
     const params = req.query;
 
-    // Verify signature
     if (!verifyReturnUrl(params)) {
       return res.status(400).json({
         success: false,
@@ -57,7 +76,6 @@ const verifyVnpayReturn = async (req, res, next) => {
 
     const { vnp_TxnRef, vnp_ResponseCode, vnp_TransactionNo } = params;
 
-    // Find payment
     const payment = await Payment.findById(vnp_TxnRef);
     if (!payment) {
       return res.status(404).json({
@@ -66,15 +84,12 @@ const verifyVnpayReturn = async (req, res, next) => {
       });
     }
 
-    // Update payment status
     if (vnp_ResponseCode === "00") {
       payment.status = "paid";
-      payment.transactionId = vnp_TransactionNo;
-      payment.paidAt = new Date();
+      payment.verifiedAt = new Date();
       await payment.save();
 
-      // Notify order service
-      await orderClient.notifyPaymentSucceeded(payment.orderId, payment._id);
+      await orderClient.notifyPaymentSucceeded(payment.orderId.toString());
 
       return res.json({
         success: true,
@@ -82,17 +97,17 @@ const verifyVnpayReturn = async (req, res, next) => {
         orderId: payment.orderId,
         paymentId: payment._id,
       });
-    } else {
-      payment.status = "failed";
-      await payment.save();
-
-      return res.json({
-        success: true,
-        status: "FAILED",
-        orderId: payment.orderId,
-        paymentId: payment._id,
-      });
     }
+
+    payment.status = "failed";
+    await payment.save();
+
+    return res.json({
+      success: true,
+      status: "FAILED",
+      orderId: payment.orderId,
+      paymentId: payment._id,
+    });
   } catch (error) {
     console.error("Verify VNPay return error:", error);
     return next(error);
@@ -100,6 +115,7 @@ const verifyVnpayReturn = async (req, res, next) => {
 };
 
 module.exports = {
+  initVnpayPayment,
   createVnpayPayment,
   verifyVnpayReturn,
 };

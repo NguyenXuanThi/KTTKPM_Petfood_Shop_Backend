@@ -4,6 +4,8 @@ const SpinHistory = require("../models/SpinHistory");
 const RewardOrder = require("../models/RewardOrder");
 const RewardShopItem = require("../models/RewardShopItem");
 const { assignCoupon, getCouponsByIds } = require("../clients/couponClient");
+const TOPICS = require("../events/topics");
+const { publishEvent } = require("../events/kafkaProducer");
 
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
@@ -26,9 +28,11 @@ const getOrCreateUserReward = async (userId) =>
 
 const grantSpins = async ({ userId, orderId, paidAmount }) => {
   const spins = calculateSpinCount(Number(paidAmount));
+  console.log(`[reward-service] Calculated spins=${spins} for amount=${paidAmount}`);
 
   const existing = await RewardOrder.findOne({ userId, orderId });
   if (existing) {
+    console.log(`[reward-service] Spins already granted for orderId=${orderId}, skipping`);
     return { rewardOrder: existing, alreadyGranted: true };
   }
 
@@ -40,9 +44,11 @@ const grantSpins = async ({ userId, orderId, paidAmount }) => {
       orderAmount: paidAmount,
       spinsGranted: spins,
     });
+    console.log(`[reward-service] RewardOrder created orderId=${orderId}`);
   } catch (error) {
     if (error.code === 11000) {
       const duplicate = await RewardOrder.findOne({ userId, orderId });
+      console.log(`[reward-service] Spins already granted for orderId=${orderId}, skipping`);
       return { rewardOrder: duplicate, alreadyGranted: true };
     }
     throw error;
@@ -56,6 +62,25 @@ const grantSpins = async ({ userId, orderId, paidAmount }) => {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+
+  const publishResult = await publishEvent(TOPICS.REWARD_GRANTED, {
+    data: {
+      userId: userId.toString(),
+      orderId: orderId.toString(),
+      rewardType: "spin",
+      rewardValue: spins,
+      grantedAt: rewardOrder.grantedAt || rewardOrder.createdAt || new Date(),
+    },
+  });
+  if (publishResult.published) {
+    console.log(
+      `[reward-service] Published reward.granted eventId=${publishResult.event.eventId} rewardType=spin`,
+    );
+  } else {
+    console.warn("[reward-service] Kafka unavailable, skipped reward.granted publish");
+  }
+
+  console.log(`[reward-service] Granted spins=${spins} userId=${userId} orderId=${orderId}`);
 
   return { rewardOrder, userReward, alreadyGranted: false };
 };
@@ -134,6 +159,24 @@ const spin = async (userId) => {
     couponId: reward.type === "coupon" ? reward.couponId : null,
   });
 
+  const rewardPublish = await publishEvent(TOPICS.REWARD_GRANTED, {
+    data: {
+      userId: userId.toString(),
+      rewardType: reward.type,
+      rewardValue: reward.label,
+      couponId: reward.type === "coupon" ? reward.couponId : null,
+      coinAmount: reward.type === "coin" ? reward.coinAmount : 0,
+      grantedAt: new Date(),
+    },
+  });
+  if (rewardPublish.published) {
+    console.log(
+      `[reward-service] Published reward.granted eventId=${rewardPublish.event.eventId} rewardType=${reward.type}`,
+    );
+  } else {
+    console.warn("[reward-service] Kafka unavailable, skipped reward.granted publish");
+  }
+
   return {
     reward: {
       rewardPoolId: reward._id,
@@ -178,6 +221,23 @@ const exchangeShopItem = async ({ userId, itemId }) => {
     });
 
     const [hydratedItem] = await attachCouponDetails([item.toObject()]);
+    const exchangePublish = await publishEvent(TOPICS.REWARD_GRANTED, {
+      data: {
+        userId: userId.toString(),
+        rewardType: "coupon",
+        rewardValue: "coin_exchange",
+        couponId: item.couponId,
+        coinAmount: 0,
+        grantedAt: new Date(),
+      },
+    });
+    if (exchangePublish.published) {
+      console.log(
+        `[reward-service] Published reward.granted eventId=${exchangePublish.event.eventId} rewardType=coin_exchange`,
+      );
+    } else {
+      console.warn("[reward-service] Kafka unavailable, skipped reward.granted publish");
+    }
     return { item: hydratedItem, assignment, coinBalance: userReward.coinBalance };
   } catch (error) {
     await UserReward.updateOne({ userId }, { $inc: { coinBalance: item.coinCost } });

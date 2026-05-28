@@ -1,5 +1,7 @@
 const Appointment = require('../models/Appointment');
 const dayjs = require('dayjs');
+const TOPICS = require('../events/topics');
+const { publishEvent } = require('../events/kafkaProducer');
 
 // build allowed slots
 function buildAllowedSlotsForDay() {
@@ -200,6 +202,28 @@ exports.createAppointment = async (req, res) => {
     });
 
     await appt.save();
+    publishEvent(TOPICS.APPOINTMENT_CREATED, {
+      data: {
+        appointmentId: appt._id.toString(),
+        customerUserId: customerId || null,
+        customerName: appt.customerName,
+        customerPhone: appt.customerPhone,
+        appointmentTime: `${appt.appointmentDate} ${appt.appointmentSlot}`,
+        source: req.body.source || 'support',
+        createdByType: supportId ? 'support' : 'user',
+        createdAt: appt.createdAt,
+      },
+    }).then((result) => {
+      if (result.published) {
+        console.log(
+          `[appointment-service] Published appointment.created eventId=${result.event.eventId} appointmentId=${appt._id} customerPhone=${appt.customerPhone}`,
+        );
+      } else {
+        console.warn('[appointment-service] Kafka unavailable, skipped appointment.created publish');
+      }
+    }).catch((error) => {
+      console.warn('[appointment-service] Failed appointment.created publish:', error.message);
+    });
 
     return res.status(201).json({ success: true, data: appt });
   } catch (err) {

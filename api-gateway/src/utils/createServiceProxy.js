@@ -1,5 +1,21 @@
 const { createProxyMiddleware } = require("http-proxy-middleware");
-const { proxyTimeoutMs } = require("../config/env");
+const { corsOrigin, proxyTimeoutMs } = require("../config/env");
+
+const getAllowedOrigin = (origin) => {
+  if (!origin) return null;
+  if (Array.isArray(corsOrigin)) {
+    return corsOrigin.includes(origin) ? origin : null;
+  }
+  return corsOrigin === origin ? origin : null;
+};
+
+const removeUpstreamCorsHeaders = (headers) => {
+  Object.keys(headers || {}).forEach((headerName) => {
+    if (headerName.toLowerCase().startsWith("access-control-")) {
+      delete headers[headerName];
+    }
+  });
+};
 
 const createServiceProxy = ({
   serviceName,
@@ -35,6 +51,18 @@ const createServiceProxy = ({
           proxyReq.setHeader("x-auth-sub", req.auth.sub || "");
           proxyReq.setHeader("x-auth-role", req.auth.role || "");
           proxyReq.setHeader("x-auth-email", req.auth.email || "");
+        }
+      },
+      proxyRes: (proxyRes, req) => {
+        removeUpstreamCorsHeaders(proxyRes.headers);
+
+        const allowedOrigin = getAllowedOrigin(req.headers.origin);
+        if (allowedOrigin) {
+          proxyRes.headers["access-control-allow-origin"] = allowedOrigin;
+          proxyRes.headers["access-control-allow-credentials"] = "true";
+          proxyRes.headers.vary = proxyRes.headers.vary
+            ? `${proxyRes.headers.vary}, Origin`
+            : "Origin";
         }
       },
       error: (err, req, res) => {

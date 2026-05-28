@@ -1,7 +1,14 @@
 const mongoose = require("mongoose");
 
-const PAYMENT_METHODS = ["cash", "banking"];
-const PAYMENT_STATUSES = ["unpaid", "pending", "waiting_verify", "paid", "failed", "expired"];
+const PAYMENT_METHODS = ["cash", "banking", "vnpay"];
+const PAYMENT_STATUSES = [
+  "unpaid",
+  "pending",
+  "waiting_verify",
+  "paid",
+  "failed",
+  "expired",
+];
 
 const paymentSchema = new mongoose.Schema(
   {

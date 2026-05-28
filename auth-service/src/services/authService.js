@@ -1,7 +1,7 @@
-const bcrypt = require("bcryptjs");
+﻿const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const PasswordResetOtp = require("../models/PasswordResetOtp");
 const sessionRepository = require("../repositories/sessionRepository");
+const { connectRedis } = require("../config/redis");
 const {
   signAccessToken,
   signRefreshToken,
@@ -11,9 +11,9 @@ const {
 const userClient = require("./userClient");
 const notificationClient = require("./notificationClient");
 
-const OTP_TTL_MS = 180 * 1000;
-const RESEND_COOLDOWN_MS = 60 * 1000;
-const RESEND_WINDOW_MS = 15 * 60 * 1000;
+const OTP_TTL_SECONDS = 180;
+const RESEND_COOLDOWN_SECONDS = 60;
+const RESEND_WINDOW_SECONDS = 15 * 60;
 const MAX_RESEND_COUNT = 3;
 const MAX_VERIFY_ATTEMPTS = 5;
 const FORGOT_PASSWORD_MESSAGE =
@@ -21,17 +21,27 @@ const FORGOT_PASSWORD_MESSAGE =
 
 const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 
-const getActivePasswordResetOtp = (email) =>
-  PasswordResetOtp.findOne({
-    email,
-    usedAt: null,
-    invalidatedAt: null,
-  }).sort({ createdAt: -1 });
+const otpKey = (email) => `otp:reset:${email}`;
+const otpCooldownKey = (email) => `otp:reset:cooldown:${email}`;
+const otpResendKey = (email) => `otp:reset:resend:${email}`;
+const otpAttemptsKey = (email) => `otp:reset:attempts:${email}`;
 
-const createPasswordResetError = (message, statusCode = 400) => {
+const createPasswordResetError = (message, statusCode = 400, details = {}) => {
   const error = new Error(message);
   error.statusCode = statusCode;
+  Object.assign(error, details);
   return error;
+};
+
+const getRequiredRedisClient = async () => {
+  const client = await connectRedis();
+  if (!client) {
+    throw createPasswordResetError(
+      "Dịch vụ xác thực OTP tạm thời không khả dụng. Vui lòng thử lại sau.",
+      503,
+    );
+  }
+  return client;
 };
 
 const createSession = async (userId) => {
@@ -192,7 +202,7 @@ const requestReactivation = async (userId) => {
 };
 
 const forgotPassword = async ({ email }) => {
-  const normalizedEmail = email.toLowerCase();
+  const normalizedEmail = email.toLowerCase().trim();
 
   let user;
   try {
@@ -204,121 +214,105 @@ const forgotPassword = async ({ email }) => {
     throw error;
   }
 
-  const now = new Date();
-  const activeOtp = await getActivePasswordResetOtp(normalizedEmail);
+  const client = await getRequiredRedisClient();
 
-  if (activeOtp) {
-    if (activeOtp.lockedUntil && activeOtp.lockedUntil > now) {
-      throw createPasswordResetError(
-        "Bạn đã gửi lại mã quá số lần cho phép. Vui lòng thử lại sau.",
-        429,
-      );
-    }
+  const cooldownTtl = await client.ttl(otpCooldownKey(normalizedEmail));
+  if (cooldownTtl > 0) {
+    throw createPasswordResetError(
+      `Vui lòng chờ ${cooldownTtl}s trước khi gửi lại mã`,
+      429,
+      { remainingSeconds: cooldownTtl },
+    );
+  }
 
-    if (activeOtp.resendAvailableAt && activeOtp.resendAvailableAt > now) {
-      throw createPasswordResetError(
-        "Vui lòng chờ trước khi gửi lại mã",
-        429,
-      );
-    }
-
-    const windowStartedAt = activeOtp.resendWindowStartedAt || activeOtp.createdAt;
-    const isSameWindow = now.getTime() - windowStartedAt.getTime() <= RESEND_WINDOW_MS;
-    const nextResendCount = isSameWindow ? activeOtp.resendCount + 1 : 1;
-
-    if (nextResendCount > MAX_RESEND_COUNT) {
-      activeOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
-      await activeOtp.save();
-      throw createPasswordResetError(
-        "Bạn đã gửi lại mã quá số lần cho phép. Vui lòng thử lại sau.",
-        429,
-      );
-    }
-
-    activeOtp.invalidatedAt = now;
-    await activeOtp.save();
-
-    const otp = generateOtp();
-    await PasswordResetOtp.create({
-      email: normalizedEmail,
-      userId: user.id || user._id,
-      otpHash: await bcrypt.hash(otp, 10),
-      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
-      resendAvailableAt: new Date(now.getTime() + RESEND_COOLDOWN_MS),
-      resendCount: nextResendCount,
-      resendWindowStartedAt: isSameWindow ? windowStartedAt : now,
-    });
-
-    await notificationClient.sendPasswordResetOtp({ email: normalizedEmail, otp });
-    return { message: FORGOT_PASSWORD_MESSAGE };
+  const resendCount = Number((await client.get(otpResendKey(normalizedEmail))) || 0);
+  if (resendCount >= MAX_RESEND_COUNT) {
+    const retryAfterSeconds = Math.max(
+      0,
+      await client.ttl(otpResendKey(normalizedEmail)),
+    );
+    throw createPasswordResetError(
+      "Bạn đã gửi mã quá nhiều lần. Vui lòng thử lại sau 15 phút",
+      429,
+      { retryAfterSeconds },
+    );
   }
 
   const otp = generateOtp();
-  await PasswordResetOtp.create({
+  const payload = {
+    userId: String(user.id || user._id),
     email: normalizedEmail,
-    userId: user.id || user._id,
     otpHash: await bcrypt.hash(otp, 10),
-    expiresAt: new Date(now.getTime() + OTP_TTL_MS),
-    resendAvailableAt: new Date(now.getTime() + RESEND_COOLDOWN_MS),
-    resendCount: 0,
-    resendWindowStartedAt: now,
-  });
+    createdAt: new Date().toISOString(),
+  };
+
+  await client.set(otpKey(normalizedEmail), JSON.stringify(payload), "EX", OTP_TTL_SECONDS);
+  await client.set(otpCooldownKey(normalizedEmail), "1", "EX", RESEND_COOLDOWN_SECONDS);
+  const nextResendCount = await client.incr(otpResendKey(normalizedEmail));
+  if (nextResendCount === 1) {
+    await client.expire(otpResendKey(normalizedEmail), RESEND_WINDOW_SECONDS);
+  }
+  await client.del(otpAttemptsKey(normalizedEmail));
 
   await notificationClient.sendPasswordResetOtp({ email: normalizedEmail, otp });
-  return { message: FORGOT_PASSWORD_MESSAGE };
+  return {
+    message: FORGOT_PASSWORD_MESSAGE,
+    cooldownSeconds: RESEND_COOLDOWN_SECONDS,
+    otpExpiresIn: OTP_TTL_SECONDS,
+  };
 };
 
 const resetPassword = async ({ email, otp, newPassword }) => {
-  const normalizedEmail = email.toLowerCase();
-  const now = new Date();
-  const resetOtp = await getActivePasswordResetOtp(normalizedEmail);
+  const normalizedEmail = email.toLowerCase().trim();
+  const client = await getRequiredRedisClient();
+  const rawOtp = await client.get(otpKey(normalizedEmail));
 
-  if (!resetOtp) {
-    throw createPasswordResetError("Mã xác thực không hợp lệ", 400);
-  }
-
-  if (resetOtp.lockedUntil && resetOtp.lockedUntil > now) {
-    throw createPasswordResetError(
-      "Bạn đã nhập sai quá số lần cho phép",
-      429,
-    );
-  }
-
-  if (resetOtp.expiresAt <= now) {
-    resetOtp.invalidatedAt = now;
-    await resetOtp.save();
+  if (!rawOtp) {
     throw createPasswordResetError("Mã xác thực đã hết hạn", 400);
   }
 
-  if (resetOtp.attempts >= MAX_VERIFY_ATTEMPTS) {
-    resetOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
-    await resetOtp.save();
+  const attempts = Number((await client.get(otpAttemptsKey(normalizedEmail))) || 0);
+  if (attempts >= MAX_VERIFY_ATTEMPTS) {
+    await client.del(otpKey(normalizedEmail));
     throw createPasswordResetError(
       "Bạn đã nhập sai quá số lần cho phép",
       429,
     );
+  }
+
+  let resetOtp;
+  try {
+    resetOtp = JSON.parse(rawOtp);
+  } catch (error) {
+    await client.del(otpKey(normalizedEmail));
+    throw createPasswordResetError("Mã xác thực không hợp lệ", 400);
   }
 
   const isOtpValid = await bcrypt.compare(otp, resetOtp.otpHash);
 
   if (!isOtpValid) {
-    resetOtp.attempts += 1;
-    if (resetOtp.attempts >= MAX_VERIFY_ATTEMPTS) {
-      resetOtp.lockedUntil = new Date(now.getTime() + RESEND_WINDOW_MS);
+    const nextAttempts = await client.incr(otpAttemptsKey(normalizedEmail));
+    if (nextAttempts === 1) {
+      await client.expire(otpAttemptsKey(normalizedEmail), OTP_TTL_SECONDS);
     }
-    await resetOtp.save();
+    if (nextAttempts >= MAX_VERIFY_ATTEMPTS) {
+      await client.del(otpKey(normalizedEmail));
+    }
 
     throw createPasswordResetError(
-      resetOtp.attempts >= MAX_VERIFY_ATTEMPTS
+      nextAttempts >= MAX_VERIFY_ATTEMPTS
         ? "Bạn đã nhập sai quá số lần cho phép"
         : "Mã xác thực không hợp lệ",
-      resetOtp.attempts >= MAX_VERIFY_ATTEMPTS ? 429 : 400,
+      nextAttempts >= MAX_VERIFY_ATTEMPTS ? 429 : 400,
     );
   }
 
   await userClient.resetPassword(resetOtp.userId, newPassword);
-  resetOtp.usedAt = now;
-  await resetOtp.save();
+  await client.del(
+    otpKey(normalizedEmail),
+    otpCooldownKey(normalizedEmail),
+    otpAttemptsKey(normalizedEmail),
+  );
   await sessionRepository.deleteManyByUserId(resetOtp.userId);
 
   return { message: "Đặt lại mật khẩu thành công" };
@@ -334,3 +328,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
 };
+
+
+
+

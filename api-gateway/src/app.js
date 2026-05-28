@@ -2,11 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
-const rateLimit = require("express-rate-limit");
 
-const { corsOrigin, rateLimitWindowMs, rateLimitMax } = require("./config/env");
+const { corsOrigin } = require("./config/env");
 const { loggerMiddleware } = require("./middlewares/loggerMiddleware");
-const { requireAuth } = require("./middlewares/authMiddleware");
+const { apiRateLimiter } = require("./middlewares/redisRateLimitMiddleware");
+const { optionalAuth, requireAuth } = require("./middlewares/authMiddleware");
 const { requireAdmin } = require("./middlewares/adminMiddleware");
 const {
   notFoundHandler,
@@ -37,33 +37,43 @@ const appointmentProxy = require("./routes/appointmentProxy");
 
 const app = express();
 
-app.use(helmet());
-app.use(
-  cors({
-    origin: corsOrigin === "*" ? true : corsOrigin,
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-internal-key",
-      "x-cart-token",
-    ],
-  }),
+const isAllowedCorsOrigin = (origin) => {
+  if (!origin) return true;
+  return Array.isArray(corsOrigin)
+    ? corsOrigin.includes(origin)
+    : corsOrigin === origin;
+};
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedCorsOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-internal-key",
+    "x-cart-token",
+    "x-session-id",
+  ],
+};
+
+console.log(
+  `[api-gateway] CORS enabled for: ${
+    Array.isArray(corsOrigin) ? corsOrigin.join(", ") : corsOrigin
+  }`,
 );
+
+app.use(helmet());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(compression());
 app.use(loggerMiddleware);
-
-const apiLimiter = rateLimit({
-  windowMs: rateLimitWindowMs,
-  max: rateLimitMax,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many requests. Please try again later.",
-  },
-});
 
 const requireAdminOnWriteMethods = (req, res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
@@ -136,11 +146,13 @@ app.get("/api/health", (req, res) => {
       adminPayments: "/api/admin/payments/*",
       adminReviews: "/api/admin/reviews/*",
       adminRewards: "/api/admin/rewards/*",
+      appointments: "/api/appointments/*",
+      ai: "/api/ai/*",
     },
   });
 });
 
-app.use("/api", apiLimiter);
+app.use("/api", apiRateLimiter);
 
 app.use("/api/auth", authProxy);
 app.use("/api/products/:productId/reviews", productReviewProxy);
@@ -154,6 +166,7 @@ app.use("/api/payments", requireAuth, paymentProxy);
 app.use("/api/uploads", requireAuth, uploadProxy);
 app.use("/api/reviews", requireAuth, reviewProxy);
 app.use("/api/rewards", requireAuth, rewardProxy);
+app.use("/api/ai", optionalAuth, aiProxy);
 app.use("/api/notifications/password-reset-otp", notificationProxy);
 
 app.use(
@@ -169,6 +182,7 @@ app.use("/api/admin/payments", requireAuth, requireAdmin, adminPaymentProxy);
 app.use("/api/admin/reviews", requireAuth, requireAdmin, adminReviewProxy);
 app.use("/api/admin/rewards", requireAuth, requireAdmin, adminRewardProxy);
 app.use("/api/notifications", requireAuth, requireAdmin, notificationProxy);
+app.use("/api/appointments", appointmentProxy);
 
 // AI and Chat services (public access for AI chatbot, auth for user-admin chat)
 app.use("/api/ai", aiProxy);

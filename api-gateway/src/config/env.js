@@ -18,8 +18,8 @@ const requiredEnvVars = [
   "REVIEW_SERVICE_URL",
   "REWARD_SERVICE_URL",
   "APPOINTMENT_SERVICE_URL",
-  "JWT_SECRET",
   "AI_SERVICE_URL",
+  "JWT_SECRET",
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -28,10 +28,25 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+const DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+
+/** Comma-separated origins -> array. Wildcard is not allowed with credentials. */
+function parseCorsOrigin(value) {
+  const raw = (value || "").trim();
+  if (!raw || raw === "*") return DEFAULT_CORS_ORIGINS;
+
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .filter((origin) => origin !== "*");
+}
+
 module.exports = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.API_GATEWAY_PORT || 3000),
-  corsOrigin: process.env.API_GATEWAY_CORS_ORIGIN || "http://localhost:5173",
+  // corsOrigin: process.env.API_GATEWAY_CORS_ORIGIN || "http://localhost:5173",
+  corsOrigin: parseCorsOrigin(process.env.API_GATEWAY_CORS_ORIGIN),
   jwtSecret: process.env.JWT_SECRET,
 
   authServiceUrl: process.env.AUTH_SERVICE_URL,
@@ -47,7 +62,7 @@ module.exports = {
   reviewServiceUrl: process.env.REVIEW_SERVICE_URL,
   rewardServiceUrl: process.env.REWARD_SERVICE_URL,
   appointmentServiceUrl: process.env.APPOINTMENT_SERVICE_URL,
-  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:3011", // AI chatbot
+  aiServiceUrl: process.env.AI_SERVICE_URL,
   chatServiceUrl: process.env.CHAT_SERVICE_URL || "http://localhost:3012", // User-Admin chat
 
   rateLimitWindowMs: Number(
@@ -55,4 +70,7 @@ module.exports = {
   ),
   rateLimitMax: Number(process.env.API_GATEWAY_RATE_LIMIT_MAX || 200),
   proxyTimeoutMs: Number(process.env.API_GATEWAY_PROXY_TIMEOUT_MS || 15000),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };
+

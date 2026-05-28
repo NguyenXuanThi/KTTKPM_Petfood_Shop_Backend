@@ -1,26 +1,39 @@
 const axios = require("axios");
-const { orderServiceUrl, orderServiceTimeoutMs } = require("../config/env");
+const {
+  orderServiceUrl,
+  orderServiceTimeoutMs,
+  orderInternalKey,
+} = require("../config/env");
 
-/**
- * Notify order-service that payment succeeded
- */
-const notifyPaymentSucceeded = async ({ orderId, paymentId, amount, paidAt }) => {
+const createError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const notifyPaymentSucceeded = async (orderId) => {
   try {
-    await axios.post(
-      `${orderServiceUrl}/api/orders/events/payment-succeeded`,
+    await axios.patch(
+      `${orderServiceUrl}/api/internal/orders/${orderId}/payment-status`,
+      { paymentStatus: "paid" },
       {
-        eventId: `vnpay-${paymentId}-${Date.now()}`,
-        orderId,
-        paymentId,
-        amount,
-        paidAt,
+        timeout: orderServiceTimeoutMs,
+        headers: {
+          "x-internal-key": orderInternalKey,
+        },
       },
-      { timeout: orderServiceTimeoutMs }
     );
   } catch (error) {
-    // Log but don't throw — payment is already recorded
-    console.error("[orderClient] Failed to notify order-service:", error.message);
+    if (error.response) {
+      throw createError(
+        error.response.data?.message || "Failed to notify order payment status",
+        error.response.status,
+      );
+    }
+    throw createError("order-service is unavailable", 502);
   }
 };
 
-module.exports = { notifyPaymentSucceeded };
+module.exports = {
+  notifyPaymentSucceeded,
+};

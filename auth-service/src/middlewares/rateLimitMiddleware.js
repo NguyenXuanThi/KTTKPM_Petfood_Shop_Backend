@@ -1,4 +1,4 @@
-const buckets = new Map();
+﻿const buckets = new Map();
 
 const createMemoryRateLimiter = ({
   windowMs,
@@ -29,14 +29,13 @@ const createMemoryRateLimiter = ({
 
 const forgotPasswordRateLimiter = createMemoryRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => {
-    const email = String(req.body?.email || "").toLowerCase().trim();
-    return `${req.ip}:${email || "unknown"}`;
-  },
-  message: "Bạn thao tác quá nhanh. Vui lòng thử lại sau.",
+  max: 30,
+  keyGenerator: (req) => req.ip || "unknown",
+  message: "Báº¡n thao tÃ¡c quÃ¡ nhanh. Vui lÃ²ng thá»­ láº¡i sau.",
 });
 
 module.exports = {
   forgotPasswordRateLimiter,
 };
+
+

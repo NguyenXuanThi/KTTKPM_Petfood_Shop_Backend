@@ -1,11 +1,16 @@
 const slugify = require("slugify");
 const mongoose = require("mongoose");
+const crypto = require("crypto");
 const categoryRepository = require("../repositories/categoryRepository");
 const { menuCacheTtlMs } = require("../config/env");
+const { getJson, setJson, deleteByPattern } = require("../config/redis");
 const { SimpleCache } = require("../utils/simpleCache");
 
 const menuCache = new SimpleCache();
 const MENU_CACHE_KEY = "categories:menu";
+const REDIS_CATEGORY_LIST_KEY = "cache:categories:list";
+const REDIS_CATEGORY_MENU_KEY = "cache:categories:menu";
+const CATEGORY_CACHE_TTL_SECONDS = 5 * 60;
 
 const ensureObjectId = (id, message = "Invalid category id") => {
   if (!mongoose.isValidObjectId(id)) {
@@ -131,8 +136,20 @@ const resolveParent = async (parentId, currentCategory = null) => {
   return parent;
 };
 
-const invalidateCache = () => {
+const stableHash = (value) =>
+  crypto
+    .createHash("sha1")
+    .update(JSON.stringify(value || {}))
+    .digest("hex");
+
+const categoryListCacheKey = (query) => {
+  if (!query || Object.keys(query).length === 0) return REDIS_CATEGORY_LIST_KEY;
+  return `${REDIS_CATEGORY_LIST_KEY}:${stableHash(query)}`;
+};
+
+const invalidateCache = async () => {
   menuCache.delete(MENU_CACHE_KEY);
+  await deleteByPattern("cache:categories:*");
 };
 
 const toDto = (doc) => {
@@ -155,11 +172,18 @@ const toDto = (doc) => {
 };
 
 const listCategories = async (query) => {
+  const cacheKey = categoryListCacheKey(query);
+  const cached = await getJson(cacheKey);
+  if (cached) return cached;
+
   const data = await categoryRepository.listFlat(query);
-  return {
+  const result = {
     items: data.items.map(toDto),
     meta: data.meta,
   };
+
+  await setJson(cacheKey, result, CATEGORY_CACHE_TTL_SECONDS);
+  return result;
 };
 
 const getCategoryTree = async () => {
@@ -171,10 +195,17 @@ const getMenuTree = async () => {
   const cached = menuCache.get(MENU_CACHE_KEY);
   if (cached) return cached;
 
+  const redisCached = await getJson(REDIS_CATEGORY_MENU_KEY);
+  if (redisCached) {
+    menuCache.set(MENU_CACHE_KEY, redisCached, menuCacheTtlMs);
+    return redisCached;
+  }
+
   const tree = await getCategoryTree();
   const menu = addMenuGrouping(tree);
 
   menuCache.set(MENU_CACHE_KEY, menu, menuCacheTtlMs);
+  await setJson(REDIS_CATEGORY_MENU_KEY, menu, CATEGORY_CACHE_TTL_SECONDS);
 
   return menu;
 };
@@ -223,7 +254,7 @@ const createCategory = async (payload) => {
     isActive: payload.isActive ?? true,
   });
 
-  invalidateCache();
+  await invalidateCache();
 
   return toDto(category);
 };
@@ -306,7 +337,7 @@ const updateCategory = async (id, payload) => {
     });
   }
 
-  invalidateCache();
+  await invalidateCache();
 
   return toDto(updatedCategory);
 };
@@ -322,7 +353,7 @@ const softDeleteCategory = async (id) => {
     throw error;
   }
 
-  invalidateCache();
+  await invalidateCache();
 
   return toDto(category);
 };

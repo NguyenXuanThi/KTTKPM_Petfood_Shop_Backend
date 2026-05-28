@@ -4,10 +4,10 @@ const config = require('./env');
 const connectDB = async () => {
   try {
     await mongoose.connect(config.MONGODB_URI);
-    console.log('✅ MongoDB connected successfully');
-  } catch (error) {
-    console.error('❌ MongoDB connection error:', error.message);
-    process.exit(1);
+    console.log('✅ MongoDB connected (ai-service)');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    // Non-fatal: service can run without DB (in-memory sessions)
   }
 };
 

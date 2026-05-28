@@ -1,5 +1,6 @@
 const express = require("express");
 const paymentController = require("../controllers/paymentController");
+const vnpayController = require("../controllers/vnpayController");
 const statisticsController = require("../controllers/statisticsController");
 const vnpayController = require("../controllers/vnpayController");
 const {
@@ -50,6 +51,24 @@ router.get(
 );
 
 // Banking routes
+router.post(
+  "/payments/vnpay/init",
+  requireInternal,
+  vnpayController.initVnpayPayment,
+);
+
+router.post(
+  "/payments/vnpay/create",
+  requireUserAuth,
+  vnpayController.createVnpayPayment,
+);
+
+router.get(
+  "/payments/vnpay/verify",
+  requireUserAuth,
+  vnpayController.verifyVnpayReturn,
+);
+
 router.post(
   "/payments/banking/upload-proof",
   requireUserAuth,

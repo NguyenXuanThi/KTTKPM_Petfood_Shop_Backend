@@ -43,4 +43,6 @@ module.exports = {
     .split(",")
     .map((type) => type.trim())
     .filter(Boolean),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };

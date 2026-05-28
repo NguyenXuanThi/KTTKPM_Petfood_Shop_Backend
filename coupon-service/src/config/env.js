@@ -31,4 +31,6 @@ module.exports = {
   notificationServiceTimeoutMs: Number(
     process.env.COUPON_NOTIFICATION_SERVICE_TIMEOUT_MS || 5000,
   ),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };
